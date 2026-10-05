@@ -2,7 +2,7 @@
     {
         "id": "v1.2-mqtt-in",
         "type": "mqtt in",
-        "name": "BMS v1.2 (JSON echo_us)",
+        "name": "BMS v1.2 (JSON lengkap)",
         "topic": "bms/gwt1",
         "qos": "0",
         "broker": "local-emqx",
@@ -13,8 +13,8 @@
     {
         "id": "v1.2-function",
         "type": "function",
-        "name": "Convert echo_us → distance → volume",
-        "func": "// Input: {echo_us: 880}\nvar echoUs = Number(msg.payload.echo_us);\n\n// Speed of sound at 16°C = 340.9 m/s = 0.03409 cm/µs\n// distance = (echo_us * speed) / 2\nvar speedCmPerUs = 0.03409;\nvar distance_cm = (echoUs * speedCmPerUs) / 2;\n\n// Piecewise linear volume\nvar volume;\nif (distance_cm >= 16.30) {\n    volume = 0;\n} else if (distance_cm >= 15.98) {\n    volume = (16.30 - distance_cm) / (16.30 - 15.98) * 100;\n} else if (distance_cm >= 5.13) {\n    volume = 100 + (15.98 - distance_cm) / (15.98 - 5.13) * 900;\n} else {\n    volume = 1000;\n}\n\nmsg.payload = {\n    echo_us: echoUs,\n    distance_cm: Math.round(distance_cm * 100) / 100,\n    volume_ml: Math.round(volume * 100) / 100\n};\n\nreturn msg;",
+        "name": "Parse & flatten",
+        "func": "// Firmware v1.2 sudah hitung semua di MCU.\n// Input: {distance_cm:13.42, volume_ml:247.0, level_percent:24.7}\n//\n// Node-RED tinggal parse + flatten untuk InfluxDB.\n\nvar p = msg.payload;\n\n// Handle string (beberapa broker kirim JSON sebagai string)\nif (typeof p === \"string\") {\n    try { p = JSON.parse(p); } catch (e) {\n        node.error(\"JSON parse error: \" + e.message, msg);\n        return null;\n    }\n}\n\nif (p.distance_cm === undefined) {\n    node.error(\"Payload tidak punya distance_cm\", msg);\n    return null;\n}\n\nmsg.payload = {\n    distance_cm: Number(p.distance_cm),\n    volume_ml: Number(p.volume_ml || 0),\n    level_percent: Number(p.level_percent || 0)\n};\n\nreturn msg;",
         "outputs": 1,
         "x": 350,
         "y": 100,
@@ -28,6 +28,16 @@
         "measurement": "sensor_data",
         "x": 550,
         "y": 100,
+        "wires": []
+    },
+    {
+        "id": "v1.2-debug",
+        "type": "debug",
+        "name": "debug",
+        "active": true,
+        "complete": "payload",
+        "x": 550,
+        "y": 160,
         "wires": []
     }
 ]

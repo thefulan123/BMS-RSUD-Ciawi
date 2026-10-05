@@ -17,6 +17,18 @@
 
 ## Payload Format
 
+### v1.2 (aktif) — firmware hitung di MCU
+
+```json
+{
+  "distance_cm": 13.42,
+  "volume_ml": 247.0,
+  "level_percent": 24.7
+}
+```
+
+### v1.1 (legacy)
+
 ```json
 {
   "echo_us": 880,
@@ -27,7 +39,9 @@
 ## Test Publish
 
 ```bash
-mosquitto_pub -h broker.avisha.id -p 1883 -t "bms/gwt1" -m '{"echo_us":880,"temperature_c":16}' -u bms -P soke1234
+mosquitto_pub -h broker.avisha.id -p 1883 -t "bms/gwt1" \
+  -m '{"distance_cm":13.42,"volume_ml":247.0,"level_percent":24.7}' \
+  -u bms -P soke1234
 ```
 
 ## Test Subscribe

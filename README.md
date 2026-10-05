@@ -5,19 +5,35 @@ Sistem Battery Management System (BMS) untuk RSUD Ciawi menggunakan ESP32 + sens
 ## Arsitektur
 
 ```
-ESP32 (HC-SR04) → EMQX (MQTT) → Node-RED → InfluxDB → Grafana
+ESP32 (HC-SR04) → [kalibrasi di MCU] → EMQX (MQTT) → Node-RED → InfluxDB → Grafana
+```
+
+Payload MQTT:
+
+```json
+{"distance_cm":13.42,"volume_ml":247.0,"level_percent":24.7}
 ```
 
 ## Komponen
 
 | Komponen | Fungsi |
 |----------|--------|
-| ESP32 | Mikrokontroler, baca sensor |
+| ESP32 | Mikrokontroler, baca sensor + hitung volume |
 | HC-SR04 | Sensor ultrasonik (jarak → volume) |
 | EMQX 6.3.1 | MQTT Broker |
-| Node-RED | Data processing & routing |
+| Node-RED | Routing data ke InfluxDB |
 | InfluxDB 2.7 | Time-series database |
 | Grafana | Dashboard & visualisasi |
+
+## Versi Firmware
+
+| Versi | Folder | Output MQTT | Konversi di |
+|-------|--------|-------------|-------------|
+| **v1.3 (aktif)** | `firmware/esp32/` | `distance_cm`, `volume_ml`, `level_percent` | MCU |
+| v1.2 | `firmware/esp32/v1.2-time/` | `echo_us` | Node-RED |
+| v1.1 | `firmware/esp32/v1.1-distance/` | `distance_cm` | Node-RED |
+
+Detail: [docs/10-versioning.md](docs/10-versioning.md)
 
 ## Quick Start
 
@@ -25,8 +41,9 @@ ESP32 (HC-SR04) → EMQX (MQTT) → Node-RED → InfluxDB → Grafana
 
 ```bash
 cd firmware/esp32
-# Edit config_private.h dengan credential WiFi & MQTT
-pio run --target upload
+# Edit include/calibration.h (kalibrasi tangki)
+# Edit include/config_private.h (credential WiFi & MQTT)
+~/.platformio/penv/bin/pio run --target upload
 ```
 
 ### 2. Jalankan Docker Stack
@@ -58,6 +75,7 @@ docker compose up -d
 - [07 Troubleshooting](docs/07-troubleshooting.md)
 - [08 Volume Calculation](docs/08-volume-calculation.md)
 - [09 Docker Volume Migration](docs/09-docker-volume-migration.md)
+- [10 Versioning](docs/10-versioning.md)
 
 ## Credentials
 

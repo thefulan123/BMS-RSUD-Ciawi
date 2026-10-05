@@ -1,62 +1,87 @@
 # Volume Calculation
 
-## Data Kalibrasi
+Perhitungan volume **sekarang dilakukan di firmware MCU** (`include/calibration.h`),
+bukan lagi di Node-RED.
+
+```
+HC-SR04
+   ↓
+raw echo (µs)
+   ↓
+temperature compensation      ← v = 331.3 + 0.606*T
+   ↓
+calibration table (piecewise) ← calibration.h
+   ↓
+volume + level %
+   ↓
+MQTT
+```
+
+## Data Kalibrasi (GWT-001)
 
 | Volume | Distance |
 |--------|----------|
-| 0 ml | 16.30 cm |
-| 100 ml | 15.98 cm |
-| 200 ml | 14.65 cm |
-| 1000 ml | 5.13 cm |
-
-## Fungsi Piecewise Linear
-
-```javascript
-function distanceToVolume(d) {
-    if (d >= 16.30) return 0;
-    if (d >= 15.98) return (16.30 - d) / (16.30 - 15.98) * 100;
-    if (d >= 5.13)  return 100 + (15.98 - d) / (15.98 - 5.13) * 900;
-    return 1000;
-}
-```
+| 0 ml | 16.02 cm |
+| 100 ml | 15.35 cm |
+| 200 ml | 14.00 cm |
+| 500 ml | 10.00 cm |
+| 1000 ml | 4.19 cm |
 
 ## Temperature Compensation
 
-Kecepatan suara berubah terhadap suhu:
+```cpp
+// calibration.h
+constexpr float TEMPERATURE_C = 16.0f;
 
-```javascript
-var T = msg.payload.temperature_c || 16;
-var v = 331.3 + (0.606 * T); // m/s
-var distance_cm = echo_us * v / 20000;
+inline float echoUsToDistance(unsigned long echoUs, float temperatureC) {
+    float speed = 331.3f + (0.606f * temperatureC); // m/s
+    return echoUs * speed / 20000.0f;               // cm
+}
+```
+
+## Piecewise Linear Interpolation
+
+```cpp
+inline float distanceToVolume(float distanceCm) {
+    if (distanceCm >= TABLE[last].distance_cm)  return 0.0f;
+    if (distanceCm <= TABLE[0].distance_cm)     return TABLE[0].volume_ml;
+
+    for (i = 0; i < SIZE - 1; i++) {
+        if (distance between TABLE[i] and TABLE[i+1]) {
+            ratio = (dHigh - distanceCm) / (dHigh - dLow);
+            return vLow + ratio * (vHigh - vLow);
+        }
+    }
+}
+```
+
+## Level Persen
+
+```cpp
+inline float volumeToPercent(float volumeMl) {
+    float maxVol = CALIBRATION_TABLE[0].volume_ml;
+    return (volumeMl / maxVol) * 100.0f;
+}
 ```
 
 ## Contoh Perhitungan
 
-| Distance | Volume |
-|----------|--------|
-| 16.30 cm | 0 ml |
-| 15.98 cm | 100 ml |
-| 14.65 cm | 200 ml |
-| 10.00 cm | ~570 ml |
-| 5.13 cm | 1000 ml |
+| Echo (µs) | Distance | Volume | Level |
+|-----------|----------|--------|-------|
+| 940 | 16.02 cm | 0 ml | 0% |
+| 901 | 15.35 cm | 100 ml | 10% |
+| 822 | 14.00 cm | 200 ml | 20% |
+| 587 | 10.00 cm | 500 ml | 50% |
+| 246 | 4.19 cm | 1000 ml | 100% |
 
-## Node-RED Function Node
+## Output MQTT
 
-```javascript
-var d = msg.payload.distance_cm;
-var volume;
-if (d >= 16.30) {
-    volume = 0;
-} else if (d >= 15.98) {
-    volume = (16.30 - d) / (16.30 - 15.98) * 100;
-} else if (d >= 5.13) {
-    volume = 100 + (15.98 - d) / (15.98 - 5.13) * 900;
-} else {
-    volume = 1000;
+```json
+{
+  "distance_cm": 13.42,
+  "volume_ml": 247.0,
+  "level_percent": 24.7
 }
-msg.payload = {
-    distance_cm: d,
-    volume_ml: Math.round(volume * 100) / 100
-};
-return msg;
 ```
+
+Node-RED tinggal terima → tulis ke InfluxDB. Tidak ada konversi lagi.
