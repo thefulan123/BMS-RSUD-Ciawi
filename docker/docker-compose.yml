@@ -1,0 +1,110 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+
+  komodo-core:
+    image: ghcr.io/moghtech/komodo-core:latest
+    container_name: komodo
+    restart: always
+    ports:
+      - "9120:9120"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - komodo-data:/data
+    environment:
+      - KOMODO_DATABASE_ADDRESS=mongodb:27017
+      - KOMODO_LOCAL_AUTH=true
+      - KOMODO_INIT_ADMIN_USERNAME=admin
+      - KOMODO_INIT_ADMIN_PASSWORD=soke123
+      - KOMODO_HOST=http://localhost:9120
+    depends_on:
+      - mongodb
+
+  emqx:
+    image: emqx/emqx:6.3.1
+    container_name: emqx
+    restart: always
+    ports:
+      - "1883:1883"
+      - "18083:18083"
+    volumes:
+      - emqx-data:/opt/emqx/data
+
+  nodered:
+    image: nodered/node-red:latest
+    container_name: nodered
+    restart: always
+    ports:
+      - "1880:1880"
+    volumes:
+      - nodered-data:/data
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      - emqx
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: always
+    environment:
+      - INFLUXDB_DB=iot
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=soke123
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=soke123
+      - GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+  chronograf:
+    image: chronograf:latest
+    container_name: chronograf
+    restart: always
+    ports:
+      - "8888:8888"
+    environment:
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_USERNAME=admin
+      - INFLUXDB_PASSWORD=soke123
+    depends_on:
+      - influxdb
+
+  mcp-grafana:
+    image: grafana/mcp-grafana:latest
+    container_name: mcp-grafana
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      - GRAFANA_URL=http://grafana:3000
+      - GRAFANA_SERVICE_ACCOUNT_TOKEN=your_token_here
+    depends_on:
+      - grafana
+
+volumes:
+  mongodb-data:
+  komodo-data:
+  emqx-data:
+  nodered-data:
+  influxdb-data:
+  grafana-data:
