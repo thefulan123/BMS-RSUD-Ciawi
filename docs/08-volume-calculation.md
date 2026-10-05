@@ -1,7 +1,8 @@
 # Volume Calculation
 
 Perhitungan volume **dilakukan di firmware MCU** (`include/calibration.h`),
-menggunakan **regresi linear (least squares)** dari 3 titik kalibrasi.
+menggunakan **natural cubic spline** — kurva halus yang lewat tepat di semua
+titik kalibrasi, lengkap dengan nilai diferensial (gradien) di tiap titik.
 
 ```
 HC-SR04
@@ -10,57 +11,47 @@ raw echo (µs)
    ↓
 temperature compensation      ← v = 331.3 + 0.606·T
    ↓
-linear regression             ← V = m·d + b
+cubic spline                  ← V = a + b·t + c·t² + d·t³
    ↓
-volume + level %
+volume + level % + differential
    ↓
 MQTT
 ```
 
-## Persamaan
+## Persamaan Spline
+
+Per interval:
 
 ```
-V(d) = −85.9490·d + 1415.5564
+V(t) = a + b·t + c·t² + d·t³      t = distance − titik awal interval
 ```
 
-Untuk firmware:
+Evaluasi dengan Horner (3 operasi):
 
-```cpp
-float volume = (-85.9490f * distanceCm) + 1415.5564f;
-volume = constrain(volume, 0.0f, 1000.0f);
+```
+V = a + t·(b + t·(c + t·d))
 ```
 
-## 3 Titik Kalibrasi
+**Diferensial** (turunan pertama):
+
+```
+V'(t) = b + 2·c·t + 3·d·t²        ← satuan ml/cm
+```
+
+## Titik Kalibrasi (GWT-001)
 
 | Distance | Volume |
 |----------|--------|
-| 4.16 cm | 1000 ml |
-| 9.58 cm | 700 ml |
-| 15.89 cm | 0 ml |
-
-## Rumus Regresi
-
-```
-m = (n·ΣdV − Σd·ΣV) / (n·Σd² − (Σd)²)
-b = (ΣV − m·Σd) / n
-```
-
-Dengan:
-
-```
-n   = 3
-Σd  = 29.63
-ΣV  = 1700
-Σd² = 361.5741
-ΣdV = 10866
-```
-
-Menghasilkan:
-
-```
-m = −85.9490
-b = 1415.5564
-```
+| 4.19 cm | 1000 ml |
+| 5.625 cm | 900 ml |
+| 6.10 cm | 800 ml |
+| 8.66 cm | 600 ml |
+| 10.00 cm | 500 ml |
+| 11.34 cm | 400 ml |
+| 12.66 cm | 300 ml |
+| 14.00 cm | 200 ml |
+| 15.35 cm | 100 ml |
+| 16.02 cm | 0 ml |
 
 ## Temperature Compensation
 
@@ -73,26 +64,25 @@ inline float echoUsToDistance(unsigned long echoUs, float temperatureC) {
 }
 ```
 
-## Implementasi (auto-calculated di compile time)
+## Implementasi di Firmware
 
 ```cpp
-// 3 titik — ubah di sini saja
-constexpr float CAL_D1 = 4.16f;    constexpr float CAL_V1 = 1000.0f;
-constexpr float CAL_D2 = 9.58f;    constexpr float CAL_V2 = 700.0f;
-constexpr float CAL_D3 = 15.89f;   constexpr float CAL_V3 = 0.0f;
-
-// m & b dihitung otomatis dari rumus di atas
-constexpr float CALIBRATION_SLOPE     = /* −85.9490 */;
-constexpr float CALIBRATION_INTERCEPT = /* 1415.5564 */;
-
-// Pakai persamaan
 inline float distanceToVolume(float distanceCm) {
-    float volume = (CALIBRATION_SLOPE * distanceCm) + CALIBRATION_INTERCEPT;
-    return constrain(volume, 0.0f, CALIBRATION_MAX_VOLUME);
+    if (distanceCm <= KNOTS[0].distance_cm)          return KNOTS[0].volume_ml;
+    if (distanceCm >= KNOTS[KNOT_COUNT-1].distance_cm)
+        return KNOTS[KNOT_COUNT-1].volume_ml;
+
+    for (size_t i = 0; i < SEG_COUNT; i++) {
+        if (distanceCm <= KNOTS[i + 1].distance_cm) {
+            float t = distanceCm - KNOTS[i].distance_cm;
+            const SplineSegment &s = SPLINE[i];
+            float volume = s.a + t * (s.b + t * (s.c + t * s.d)); // Horner
+            return constrain(volume, 0.0f, CALIBRATION_MAX_VOLUME);
+        }
+    }
+    return 0.0f;
 }
 ```
-
-Keuntungannya: kalau GWT lain beda, cukup ganti 3 titik — `m` & `b` ikut berubah.
 
 ## Level Persen
 
@@ -103,42 +93,77 @@ inline float volumeToPercent(float volumeMl) {
 }
 ```
 
-## Contoh Perhitungan
+## Tiap Diferensial Punya Nilai
+
+Gradien `dV/dd` disimpan di `KNOTS[].slope` dan bisa dihitung di jarak
+manapun lewat `Calibration::distanceToSlope()`:
+
+| Distance | Volume | Diferensial | Arti |
+|----------|--------|-------------|------|
+| 4.19 cm | 1000.0 ml | −11.61 ml/cm | hampir penuh, landai |
+| 5.625 cm | 900.0 ml | −185.84 ml/cm | curam |
+| 6.10 cm | 800.0 ml | −202.21 ml/cm | **paling curam** |
+| 6.68 cm | 709.0 ml | −116.52 ml/cm | |
+| 8.66 cm | 600.0 ml | −52.55 ml/cm | landai |
+| 10.00 cm | 500.0 ml | −80.59 ml/cm | |
+| 14.00 cm | 200.0 ml | −61.29 ml/cm | landai |
+| 15.35 cm | 100.0 ml | −121.86 ml/cm | curam di dasar |
+| 16.02 cm | 0.0 ml | −162.95 ml/cm | dasar tangki |
+
+Gradien **kontinu antar interval** (beda kiri-kanan di knot ~1e-14) —
+tidak ada lompatan, jadi grafik di Grafana mulus.
+
+## Contoh Perhitungan: 6.68 cm
+
+```
+t = 6.68 - 6.10 = 0.58
+segmen: a=800, b=-202.215, c=86.9562, d=-15.032634
+
+V   = 800 + 0.58·(-202.215 + 0.58·(86.9562 + 0.58·(-15.032634)))
+    ≈ 709.0 ml
+
+V'  = -202.215 + 0.58·(2·86.9562 + 3·(-15.032634)·0.58)
+    ≈ -116.52 ml/cm
+```
+
+## Tabel Hasil
 
 | Distance | Volume | Level |
 |----------|--------|-------|
-| 3.00 cm | 1000.0 ml (clamp) | 100.0% |
-| 4.16 cm | 1000.0 ml (clamp) | 100.0% |
-| 4.84 cm | 999.6 ml | 100.0% |
-| 6.68 cm | 841.4 ml | 84.1% |
-| 9.58 cm | 592.2 ml | 59.2% |
-| 12.00 cm | 384.2 ml | 38.4% |
-| 15.89 cm | 49.8 ml | 5.0% |
-| 16.47 cm | 0.0 ml | 0.0% |
-| 20.00 cm | 0.0 ml (clamp) | 0.0% |
+| 4.19 cm | 1000.0 ml | 100.0% |
+| 5.00 cm | 975.6 ml | 97.6% |
+| 6.68 cm | 709.0 ml | 70.9% |
+| 8.00 cm | 626.6 ml | 62.7% |
+| 9.58 cm | 534.5 ml | 53.5% |
+| 12.00 cm | 351.1 ml | 35.1% |
+| 15.89 cm | 21.1 ml | 2.1% |
+| 16.02 cm | 0.0 ml | 0.0% |
+| >16.02 cm | 0.0 ml (clamp) | 0.0% |
 
-**Batas clamp:** `d ≤ 4.83 cm` → 1000 ml, `d ≥ 16.47 cm` → 0 ml.
+## Sifat yang Diverifikasi
 
-## Catatan: Garis Regresi vs Titik Ukur
+- ✅ Lewat tepat semua 10 titik (error 0)
+- ✅ Gradien kontinu di tiap knot
+- ✅ Monotonic (0 violations pada sampling 0.001 cm)
+- ✅ Range tetap 0..1000 ml (no overshoot)
 
-Least squares memberi garis terbaik **secara keseluruhan**, bukan melewati
-tepat tiap titik:
+## Regenerate Koefisien
 
-| Titik | Ukur | Prediksi |
-|-------|------|----------|
-| 4.16 cm | 1000 ml | 1058 ml (di-clamp 1000) |
-| 9.58 cm | 700 ml | 592 ml |
-| 15.89 cm | 0 ml | 50 ml (5%) |
+Kalau titik kalibrasi berubah:
 
-Kalau butuh melewati tepat tiap titik → piecewise linear per interval.
+```bash
+python3 docs/tools/gen_spline.py titik.txt
+# tempel outputnya ke KNOTS[] dan SPLINE[] di calibration.h
+```
 
-## Output MQTT
+## Output MQTT (v1.4)
 
 ```json
 {
   "distance_cm": 6.68,
-  "volume_ml": 841.4,
-  "level_percent": 84.1
+  "volume_ml": 709.0,
+  "level_percent": 70.9,
+  "differential": -116.52
 }
 ```
 

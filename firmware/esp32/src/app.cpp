@@ -20,7 +20,8 @@ void App::setup()
 
     Serial.println();
     Serial.println("==============================");
-    Serial.println("ESP32 BMS MQTT");
+    Serial.println("ESP32 BMS MQTT v1.4");
+    Serial.println("Kalibrasi: natural cubic spline (calibration.h)");
     Serial.println("==============================");
 
     // Siapkan hardware sensor (pin TRIG/ECHO).
@@ -80,7 +81,9 @@ void App::loop()
             Serial.print(reading.volume_ml, 1);
             Serial.print(" ml | Level: ");
             Serial.print(reading.level_percent, 1);
-            Serial.println(" %");
+            Serial.print(" % | Diff: ");
+            Serial.print(reading.differential, 2);
+            Serial.println(" ml/cm");
 
             Serial.print("JSON: ");
             Serial.println(payload);
@@ -102,6 +105,8 @@ String App::buildJson(const SensorReading &reading)
     payload += String(reading.volume_ml, 1);
     payload += ",\"level_percent\":";
     payload += String(reading.level_percent, 1);
+    payload += ",\"differential\":";
+    payload += String(reading.differential, 2);
     payload += "}";
     return payload;
 }
