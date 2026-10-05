@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sensor.h"
+#include "calibration.h"
 
 #include <Arduino.h>
 
@@ -18,7 +19,10 @@ public:
     bool begin() override;
 
     // v1.2: Return raw echo time in microseconds (for Node-RED conversion)
-    unsigned long readEchoUs();
+    unsigned long readEchoUs() override;
+
+    // Baca lengkap: echo → jarak (kompensasi suhu) → volume → level.
+    SensorReading read() override;
 
     // Legacy: keep for backward compatibility
     float readCM() override;

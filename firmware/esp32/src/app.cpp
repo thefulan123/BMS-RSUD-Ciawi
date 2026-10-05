@@ -61,22 +61,26 @@ void App::loop()
     {
         _lastPublish = millis();
 
-        // v1.2: Send raw echo time in microseconds
-        unsigned long echoUs = _sensor.readEchoUs();
+        // Baca lengkap: echo → jarak → volume → level (semua di MCU).
+        SensorReading reading = _sensor.read();
 
-        if (echoUs == 0)
+        if (!reading.valid)
         {
             Serial.println("HC-SR04 timeout!");
             return;
         }
 
-        String payload = buildJson(echoUs);
+        String payload = buildJson(reading);
 
         if (_mqtt.publish(payload.c_str()))
         {
             Serial.print("Distance: ");
-            Serial.print(distanceCM, 2);
-            Serial.println(" cm");
+            Serial.print(reading.distance_cm, 2);
+            Serial.print(" cm | Volume: ");
+            Serial.print(reading.volume_ml, 1);
+            Serial.print(" ml | Level: ");
+            Serial.print(reading.level_percent, 1);
+            Serial.println(" %");
 
             Serial.print("JSON: ");
             Serial.println(payload);
@@ -88,12 +92,16 @@ void App::loop()
     }
 }
 
-// Buat payload JSON sederhana dari jarak (cara awam: susun string manual).
-String App::buildJson(float distanceCM)
+// Buat payload JSON dari hasil bacaan lengkap (cara awam: susun string manual).
+String App::buildJson(const SensorReading &reading)
 {
     String payload = "{";
     payload += "\"distance_cm\":";
-    payload += String(distanceCM, 2);
+    payload += String(reading.distance_cm, 2);
+    payload += ",\"volume_ml\":";
+    payload += String(reading.volume_ml, 1);
+    payload += ",\"level_percent\":";
+    payload += String(reading.level_percent, 1);
     payload += "}";
     return payload;
 }

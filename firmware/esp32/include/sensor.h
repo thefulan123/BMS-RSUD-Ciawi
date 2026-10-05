@@ -7,6 +7,16 @@
  * (misal ultrasonic lain / ToF) tanpa menyentuh App.
  * Cara pakai: buat class baru dari IDistanceSensor, lalu inject ke App.
  */
+
+// Hasil bacaan lengkap: jarak, volume (hasil kalibrasi), dan level (%).
+struct SensorReading
+{
+    float distance_cm;     // Jarak sensor → permukaan air
+    float volume_ml;       // Volume air hasil interpolasi kalibrasi
+    float level_percent;   // Persen isi tangki (0-100)
+    bool valid;            // false bila timeout/sensor gagal
+};
+
 class IDistanceSensor
 {
 public:
@@ -17,4 +27,10 @@ public:
 
     // Baca jarak dalam cm. Kembalikan -1 bila gagal/timeout.
     virtual float readCM() = 0;
+
+    // Baca echo time mentah dalam mikrodetik (µs). 0 bila timeout.
+    virtual unsigned long readEchoUs() = 0;
+
+    // Baca lengkap: echo → jarak (kompensasi suhu) → volume → level.
+    virtual SensorReading read() = 0;
 };

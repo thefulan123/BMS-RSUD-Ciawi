@@ -29,6 +29,32 @@ unsigned long HcSr04Sensor::readEchoUs()
     return pulseIn(_echoPin, HIGH, 30000);
 }
 
+// Baca lengkap: echo → jarak (kompensasi suhu) → volume → level (%).
+// Pipeline: HC-SR04 → raw echo → temperature compensation → calibration → reading
+SensorReading HcSr04Sensor::read()
+{
+    SensorReading r = {0.0f, 0.0f, 0.0f, false};
+
+    unsigned long echoUs = readEchoUs();
+
+    if (echoUs == 0)
+    {
+        return r;  // valid = false
+    }
+
+    // 1. Echo time → jarak, dengan kompensasi suhu (v = 331.3 + 0.606*T)
+    r.distance_cm = Calibration::echoUsToDistance(echoUs, TEMPERATURE_C);
+
+    // 2. Jarak → volume, via piecewise linear interpolation tabel kalibrasi
+    r.volume_ml = Calibration::distanceToVolume(r.distance_cm);
+
+    // 3. Volume → level persen
+    r.level_percent = Calibration::volumeToPercent(r.volume_ml);
+
+    r.valid = true;
+    return r;
+}
+
 // Legacy: keep for backward compatibility
 float HcSr04Sensor::readCM()
 {
@@ -49,7 +75,8 @@ float HcSr04Sensor::readCM()
 
         if (duration > 0)
         {
-            samples[count++] = duration * 0.0343 / 2.0;
+            // Pakai kompensasi suhu dari calibration.h, bukan konstanta hardcoded.
+            samples[count++] = Calibration::echoUsToDistance(duration, TEMPERATURE_C);
         }
 
         delay(50);

@@ -1,0 +1,11 @@
+# PlatformIO build artifacts
+.pio/
+.vscode/
+compile_commands.json
+
+# Secrets
+firmware/esp32/include/config_private.h
+
+# Backup
+*.bak
+*.tar.gz
