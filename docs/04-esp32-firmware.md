@@ -49,25 +49,20 @@ HC-SR04 → raw echo (µs) → temperature compensation → calibration table �
 
 ## Kalibrasi
 
-Semua parameter tangki ada di **`include/calibration.h`**. Pindah tangki = edit 1 file saja.
+Semua parameter tangki ada di **`include/calibration.h`**. Pindah tangki = ubah 3 angka saja.
 
 ```cpp
 // Suhu ruang (nanti bisa diganti sensor suhu)
 constexpr float TEMPERATURE_C = 16.0f;
 
-// Tabel kalibrasi: jarak sensor → volume air
-constexpr CalibrationPoint CALIBRATION_TABLE[] = {
-    {4.19f,  1000.0f},
-    {5.625f,  900.0f},
-    {6.10f,   800.0f},
-    {8.66f,   600.0f},
-    {10.00f,  500.0f},
-    {11.34f,  400.0f},
-    {12.66f,  300.0f},
-    {14.00f,  200.0f},
-    {15.35f,  100.0f},
-    {16.02f,    0.0f}
-};
+// Parameter kalibrasi tangki — UBAH DI SINI SAJA
+constexpr float CALIBRATION_MAX_VOLUME   = 1000.0f;  // volume penuh (ml)
+constexpr float CALIBRATION_MIN_DISTANCE = 4.19f;    // jarak saat penuh (cm)
+constexpr float CALIBRATION_MAX_DISTANCE = 16.02f;   // jarak saat kosong (cm)
+
+// Persamaan linear dihitung otomatis: V = m·d + b
+constexpr float CALIBRATION_SLOPE = /* -84.53 */;
+constexpr float CALIBRATION_INTERCEPT = /* 1354.18 */;
 ```
 
 Rumus kompensasi suhu (otomatis dipakai):

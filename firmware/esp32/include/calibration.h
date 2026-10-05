@@ -3,82 +3,57 @@
 #include <Arduino.h>
 
 // ============================================================
-// KALIBRASI TANGKI & SENSOR
+// KALIBRASI TANGKI & SENSOR — LINEAR GLOBAL
 // --------------------------------
-// File ini Sering diubah saat:
-//   - Pindah tangki (GWT-001 → GWT-002)
-//   - Ganti sensor
-//   - Perubahan mounting
+// Cukup ubah 3 ANGKA di bawah. Persamaan dihitung otomatis.
 //
-// Cara pakai:
-//   1. Ukur jarak sensor → permukaan air (cm) untuk tiap volume
-//   2. Masukkan ke CALIBRATION_TABLE
-//   3. Firmware otomatis hitung volume & level
+//   Pindah tangki (GWT-001 → GWT-002) → ubah 3 angka ini
+//   Ganti sensor / mounting            → ubah 3 angka ini
+//
+// Persamaan:   V = m·d + b
+//   m (gradien) = (0 - MAX_VOLUME) / (MAX_DISTANCE - MIN_DISTANCE)
+//   b (offset)  = MAX_VOLUME - m·MIN_DISTANCE
+//
+// Titik jangkauan:
+//   d = CALIBRATION_MIN_DISTANCE → V = MAX_VOLUME (penuh)
+//   d = CALIBRATION_MAX_DISTANCE → V = 0          (kosong)
 // ============================================================
 
-// --- Konstanta Sensor ---
-constexpr float TEMPERATURE_C = 16.0f;           // Suhu ruang (ganti bila perlu / nanti pakai sensor suhu)
-constexpr float SOUND_SPEED_MPS = 341.0f;        // m/s pada 16°C
-constexpr float SOUND_SPEED_CM_US = 0.0341f;     // cm/µs
+// --- Suhu ruang (kompensasi kecepatan suara) ---
+constexpr float TEMPERATURE_C = 16.0f;
 
-// --- Kalibrasi Tangki ---
-struct CalibrationPoint {
-    float distance_cm;
-    float volume_ml;
-};
+// --- Parameter kalibrasi tangki (UBAH DI SINI SAJA) ---
+constexpr float CALIBRATION_MAX_VOLUME   = 1000.0f;  // volume penuh (ml)
+constexpr float CALIBRATION_MIN_DISTANCE = 4.19f;    // jarak saat penuh (cm)
+constexpr float CALIBRATION_MAX_DISTANCE = 16.02f;   // jarak saat kosong (cm)
 
-// Tabel kalibrasi: jarak sensor → volume air
-// (diisi sesuai pengukuran tiap tangki)
-constexpr CalibrationPoint CALIBRATION_TABLE[] = {
-    {4.19f,  1000.0f},
-    {5.625f,  900.0f},
-    {6.10f,   800.0f},
-    {8.66f,   600.0f},
-    {10.00f,  500.0f},
-    {11.34f,  400.0f},
-    {12.66f,  300.0f},
-    {14.00f,  200.0f},
-    {15.35f,  100.0f},
-    {16.02f,    0.0f}
-};
+// --- Persamaan linear (dihitung otomatis dari parameter di atas) ---
+// V = CALIBRATION_SLOPE * d + CALIBRATION_INTERCEPT
+constexpr float CALIBRATION_SLOPE =
+    (0.0f - CALIBRATION_MAX_VOLUME) /
+    (CALIBRATION_MAX_DISTANCE - CALIBRATION_MIN_DISTANCE);
 
-constexpr size_t CALIBRATION_SIZE = sizeof(CALIBRATION_TABLE) / sizeof(CALIBRATION_TABLE[0]);
+constexpr float CALIBRATION_INTERCEPT =
+    CALIBRATION_MAX_VOLUME - (CALIBRATION_SLOPE * CALIBRATION_MIN_DISTANCE);
 
 // --- Fungsi helper ---
 namespace Calibration {
 
-    // Convert echo time (µs) → distance (cm) dengan kompensasi suhu
+    // Echo time (µs) → jarak (cm), dengan kompensasi suhu
     inline float echoUsToDistance(unsigned long echoUs, float temperatureC) {
         float speed = 331.3f + (0.606f * temperatureC); // m/s
         return echoUs * speed / 20000.0f;               // cm
     }
 
-    // Convert distance (cm) → volume (ml) via piecewise linear interpolation
+    // Jarak (cm) → volume (ml): SATU persamaan linear, di-clamp 0..MAX_VOLUME
     inline float distanceToVolume(float distanceCm) {
-        if (distanceCm >= CALIBRATION_TABLE[CALIBRATION_SIZE - 1].distance_cm) {
-            return 0.0f;
-        }
-        if (distanceCm <= CALIBRATION_TABLE[0].distance_cm) {
-            return CALIBRATION_TABLE[0].volume_ml;
-        }
-
-        for (size_t i = 0; i < CALIBRATION_SIZE - 1; i++) {
-            float dHigh = CALIBRATION_TABLE[i].distance_cm;
-            float dLow  = CALIBRATION_TABLE[i + 1].distance_cm;
-            float vHigh = CALIBRATION_TABLE[i].volume_ml;
-            float vLow  = CALIBRATION_TABLE[i + 1].volume_ml;
-
-            if (distanceCm <= dHigh && distanceCm >= dLow) {
-                float ratio = (dHigh - distanceCm) / (dHigh - dLow);
-                return vLow + ratio * (vHigh - vLow);
-            }
-        }
-        return 0.0f;
+        float volume = (CALIBRATION_SLOPE * distanceCm) + CALIBRATION_INTERCEPT;
+        return constrain(volume, 0.0f, CALIBRATION_MAX_VOLUME);
     }
 
-    // Hitung level persen
+    // Volume (ml) → level (%): di-clamp 0..100
     inline float volumeToPercent(float volumeMl) {
-        float maxVol = CALIBRATION_TABLE[0].volume_ml;
-        return (volumeMl / maxVol) * 100.0f;
+        float percent = (volumeMl / CALIBRATION_MAX_VOLUME) * 100.0f;
+        return constrain(percent, 0.0f, 100.0f);
     }
 }

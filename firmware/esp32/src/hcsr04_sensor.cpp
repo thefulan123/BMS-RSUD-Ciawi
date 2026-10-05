@@ -45,7 +45,7 @@ SensorReading HcSr04Sensor::read()
     // 1. Echo time → jarak, dengan kompensasi suhu (v = 331.3 + 0.606*T)
     r.distance_cm = Calibration::echoUsToDistance(echoUs, TEMPERATURE_C);
 
-    // 2. Jarak → volume, via piecewise linear interpolation tabel kalibrasi
+    // 2. Jarak → volume, satu persamaan linear (V = m·d + b)
     r.volume_ml = Calibration::distanceToVolume(r.distance_cm);
 
     // 3. Volume → level persen

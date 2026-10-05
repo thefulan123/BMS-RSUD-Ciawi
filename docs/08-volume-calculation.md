@@ -1,31 +1,48 @@
 # Volume Calculation
 
-Perhitungan volume **sekarang dilakukan di firmware MCU** (`include/calibration.h`),
-bukan lagi di Node-RED.
+Perhitungan volume **dilakukan di firmware MCU** (`include/calibration.h`),
+menggunakan **satu persamaan linear global**.
 
 ```
 HC-SR04
    ↓
 raw echo (µs)
    ↓
-temperature compensation      ← v = 331.3 + 0.606*T
+temperature compensation      ← v = 331.3 + 0.606·T
    ↓
-calibration table (piecewise) ← calibration.h
+linear equation               ← V = m·d + b
    ↓
 volume + level %
    ↓
 MQTT
 ```
 
-## Data Kalibrasi (GWT-001)
+## Parameter Kalibrasi (GWT-001)
 
-| Volume | Distance |
-|--------|----------|
-| 0 ml | 16.02 cm |
-| 100 ml | 15.35 cm |
-| 200 ml | 14.00 cm |
-| 500 ml | 10.00 cm |
-| 1000 ml | 4.19 cm |
+```cpp
+constexpr float CALIBRATION_MAX_VOLUME   = 1000.0f;  // ml
+constexpr float CALIBRATION_MIN_DISTANCE = 4.19f;    // cm (penuh)
+constexpr float CALIBRATION_MAX_DISTANCE = 16.02f;   // cm (kosong)
+```
+
+## Persamaan Linear
+
+Dihitung otomatis di compile time:
+
+```cpp
+// m = (0 - MAX_VOLUME) / (MAX_DISTANCE - MIN_DISTANCE)
+constexpr float CALIBRATION_SLOPE =
+    (0.0f - CALIBRATION_MAX_VOLUME) /
+    (CALIBRATION_MAX_DISTANCE - CALIBRATION_MIN_DISTANCE);
+// = -84.53
+
+// b = MAX_VOLUME - m·MIN_DISTANCE
+constexpr float CALIBRATION_INTERCEPT =
+    CALIBRATION_MAX_VOLUME - (CALIBRATION_SLOPE * CALIBRATION_MIN_DISTANCE);
+// = 1354.18
+
+// Jadi: V = -84.53·d + 1354.18
+```
 
 ## Temperature Compensation
 
@@ -39,28 +56,23 @@ inline float echoUsToDistance(unsigned long echoUs, float temperatureC) {
 }
 ```
 
-## Piecewise Linear Interpolation
+## Rumus Volume
 
 ```cpp
 inline float distanceToVolume(float distanceCm) {
-    if (distanceCm >= TABLE[last].distance_cm)  return 0.0f;
-    if (distanceCm <= TABLE[0].distance_cm)     return TABLE[0].volume_ml;
-
-    for (i = 0; i < SIZE - 1; i++) {
-        if (distance between TABLE[i] and TABLE[i+1]) {
-            ratio = (dHigh - distanceCm) / (dHigh - dLow);
-            return vLow + ratio * (vHigh - vLow);
-        }
-    }
+    float volume = (CALIBRATION_SLOPE * distanceCm) + CALIBRATION_INTERCEPT;
+    return constrain(volume, 0.0f, CALIBRATION_MAX_VOLUME);
 }
 ```
+
+Clamp penting — supaya di luar rentang kalibrasi tetap 0..1000 ml.
 
 ## Level Persen
 
 ```cpp
 inline float volumeToPercent(float volumeMl) {
-    float maxVol = CALIBRATION_TABLE[0].volume_ml;
-    return (volumeMl / maxVol) * 100.0f;
+    float percent = (volumeMl / CALIBRATION_MAX_VOLUME) * 100.0f;
+    return constrain(percent, 0.0f, 100.0f);
 }
 ```
 
@@ -68,19 +80,20 @@ inline float volumeToPercent(float volumeMl) {
 
 | Echo (µs) | Distance | Volume | Level |
 |-----------|----------|--------|-------|
-| 940 | 16.02 cm | 0 ml | 0% |
-| 901 | 15.35 cm | 100 ml | 10% |
-| 822 | 14.00 cm | 200 ml | 20% |
-| 587 | 10.00 cm | 500 ml | 50% |
-| 246 | 4.19 cm | 1000 ml | 100% |
+| 940 | 16.02 cm | 0.0 ml | 0.0% |
+| 822 | 14.00 cm | 170.8 ml | 17.1% |
+| 587 | 10.00 cm | 508.9 ml | 50.9% |
+| 392 | 6.68 cm | 789.5 ml | 79.0% |
+| 246 | 4.19 cm | 1000.0 ml | 100.0% |
+| 176 | 3.00 cm | 1000.0 ml | 100.0% (clamp) |
 
 ## Output MQTT
 
 ```json
 {
-  "distance_cm": 13.42,
-  "volume_ml": 247.0,
-  "level_percent": 24.7
+  "distance_cm": 6.68,
+  "volume_ml": 789.5,
+  "level_percent": 79.0
 }
 ```
 

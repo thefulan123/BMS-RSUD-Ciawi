@@ -1,57 +1,71 @@
 # Sensor Calibration
 
-Kalibrasi sekarang **di firmware MCU**, bukan di Node-RED.
+Kalibrasi sekarang **di firmware MCU**, dan pakai **satu persamaan linear global**.
 Semua parameter ada di satu file: **`firmware/esp32/include/calibration.h`**
 
-> Pindah tangki / ganti sensor → edit 1 file ini saja, compile ulang.
-> Kode sensor dan MQTT tidak perlu disentuh.
+> Pindah tangki / ganti sensor → ubah **3 angka** saja, compile ulang.
+> Gradien `m` dan offset `b` dihitung otomatis — tidak perlu hitung manual.
 
-## Data Kalibrasi (GWT-001)
+## Persamaan
 
-| Volume | Distance | Section |
-|--------|----------|---------|
-| 0 ml | 16.02 cm | Mengerucut |
-| 100 ml | 15.35 cm | Mengerucut |
-| 200 ml | 14.00 cm | Linear |
-| 300 ml | 12.66 cm | Linear |
-| 400 ml | 11.34 cm | Linear |
-| 500 ml | 10.00 cm | Linear |
-| 600 ml | 8.66 cm | Linear |
-| 800 ml | 6.10 cm | Linear |
-| 900 ml | 5.625 cm | Linear |
-| 1000 ml | 4.19 cm | Linear |
+```
+V = m·d + b
+```
 
-## Tabel di `calibration.h`
+Dihitung otomatis dari 3 parameter:
 
 ```cpp
-constexpr CalibrationPoint CALIBRATION_TABLE[] = {
-    {4.19f,  1000.0f},
-    {5.625f,  900.0f},
-    {6.10f,   800.0f},
-    {8.66f,   600.0f},
-    {10.00f,  500.0f},
-    {11.34f,  400.0f},
-    {12.66f,  300.0f},
-    {14.00f,  200.0f},
-    {15.35f,  100.0f},
-    {16.02f,    0.0f}
-};
+m = (0 - MAX_VOLUME) / (MAX_DISTANCE - MIN_DISTANCE)
+b = MAX_VOLUME - m·MIN_DISTANCE
 ```
 
-**Catatan:** tabel ini bukan karakteristik HC-SR04, tapi karakteristik
-**HC-SR04 + posisi pemasangan + bentuk tangki GWT-001**.
-Makanya ditempatkan di file konfigurasi, bukan di kode sensor.
+Dengan parameter GWT-001 sekarang:
 
-## Cara Kerja Interpolasi
+| Parameter | Nilai | Arti |
+|-----------|-------|------|
+| `CALIBRATION_MAX_VOLUME` | 1000.0 ml | volume penuh |
+| `CALIBRATION_MIN_DISTANCE` | 4.19 cm | jarak saat penuh |
+| `CALIBRATION_MAX_DISTANCE` | 16.02 cm | jarak saat kosong |
 
-Tabel diurutkan dari volume terbesar (jarak terkecil) → terkecil (jarak terbesar).
-Fungsi `Calibration::distanceToVolume()` melakukan piecewise linear interpolation:
+Menghasilkan:
 
 ```
-distance ≤ 4.19  → 1000 ml (clamp atas)
-distance ≥ 16.02 → 0 ml    (clamp bawah)
-di antara        → interpolasi linear antar 2 titik terdekat
+m = -84.53
+b = 1354.18
+
+V = -84.53·d + 1354.18
 ```
+
+## `calibration.h`
+
+```cpp
+// --- Suhu ruang (kompensasi kecepatan suara) ---
+constexpr float TEMPERATURE_C = 16.0f;
+
+// --- Parameter kalibrasi tangki (UBAH DI SINI SAJA) ---
+constexpr float CALIBRATION_MAX_VOLUME   = 1000.0f;  // volume penuh (ml)
+constexpr float CALIBRATION_MIN_DISTANCE = 4.19f;    // jarak saat penuh (cm)
+constexpr float CALIBRATION_MAX_DISTANCE = 16.02f;   // jarak saat kosong (cm)
+
+// --- Persamaan linear (dihitung otomatis) ---
+constexpr float CALIBRATION_SLOPE =
+    (0.0f - CALIBRATION_MAX_VOLUME) /
+    (CALIBRATION_MAX_DISTANCE - CALIBRATION_MIN_DISTANCE);
+
+constexpr float CALIBRATION_INTERCEPT =
+    CALIBRATION_MAX_VOLUME - (CALIBRATION_SLOPE * CALIBRATION_MIN_DISTANCE);
+```
+
+## Contoh Perhitungan
+
+| Distance | Volume | Level | Keterangan |
+|----------|--------|-------|------------|
+| 3.00 cm | 1000.0 ml | 100.0% | clamp atas |
+| 4.19 cm | 1000.0 ml | 100.0% | penuh |
+| 6.68 cm | 789.5 ml | 79.0% | |
+| 10.00 cm | 508.9 ml | 50.9% | |
+| 16.02 cm | 0.0 ml | 0.0% | kosong |
+| 20.00 cm | 0.0 ml | 0.0% | clamp bawah |
 
 ## Kompensasi Suhu
 
@@ -69,20 +83,52 @@ dengan pembacaan aktual — tidak perlu ubah tempat lain.
 
 ## Cara Kalibrasi Ulang (Tangki Baru)
 
-1. Kosongkan wadah → catat distance (`16.02 cm` misal)
-2. Isi bertahap (100, 200, ... 1000 ml) → catat distance tiap titik
-3. Masukkan ke `CALIBRATION_TABLE` di `calibration.h`
-4. Compile & upload: `pio run --target upload`
-5. Cek serial monitor: pastikan `volume_ml` sesuai
+1. Kosongkan wadah → catat distance (misal `16.02 cm`)
+2. Isi penuh → catat distance (misal `4.19 cm`)
+3. Catat volume penuh (misal `1000 ml`)
+4. Masukkan ke 3 parameter di `calibration.h`
+5. Compile & upload: `pio run --target upload`
+6. Cek serial monitor: pastikan `volume_ml` sesuai
+
+### Cara Ukur dengan 1 Titik Tambahan (opsional)
+
+Kalau mau cek akurasi, ukur di tengah (500 ml) lalu bandingkan:
+
+```bash
+# Lihat hasil firmware
+pio device monitor --baud 115200
+# Distance: 10.00 cm | Volume: 508.9 ml | Level: 50.9 %
+```
+
+Selisih wajar < ±5% di titik tengah.
+
+## Akurasi: Linear Global vs Interpolasi
+
+**Linear global** (yang dipakai sekarang) hanya 2 titik: penuh & kosong.
+
+| Jarak | Titik kalibrasi asli | Linear global |
+|-------|---------------------|---------------|
+| 6.68 cm | ~755 ml | 789.5 ml |
+| 10.00 cm | 500 ml | 508.9 ml |
+
+Selisih muncul karena bentuk tangki tidak sepenuhnya linear.
+Keuntungannya:
+
+- Kode simpel, gampang debug
+- Kalibrasi cukup 3 angka
+- Cukup untuk monitoring level
+
+Kalau butuh akurasi lebih tinggi, bisa kembali ke interpolasi
+piecewise multi-titik (lihat git history).
 
 ## Multi-Tangki
 
-Kalau ada 10 tangki, firmware dasar sama. Yang beda hanya `calibration.h`:
+Kalau ada 10 tangki, firmware dasar sama. Yang beda hanya 3 parameter:
 
-| Device | Calibration |
-|--------|-------------|
-| GWT-001 | `calibration.h` v1 |
-| GWT-002 | `calibration.h` v2 |
+| Device | MIN_DISTANCE | MAX_DISTANCE | MAX_VOLUME |
+|--------|--------------|--------------|------------|
+| GWT-001 | 4.19 | 16.02 | 1000 |
+| GWT-002 | ? | ? | ? |
 
 Rencana lanjutan: simpan di **NVS** supaya OTA firmware tidak menghapus kalibrasi.
 
@@ -91,4 +137,4 @@ Rencana lanjutan: simpan di **NVS** supaya OTA firmware tidak menghapus kalibras
 - Pastikan sensor sejajar dengan permukaan air
 - Hindari gelombang/air bergerak
 - Kalibrasi di suhu yang sama dengan penggunaan
-- Titik kalibrasi makin banyak → makin akurat
+- Titik kosong & penuh harus diukur dengan hati-hati (2 titik ini menentukan semuanya)
