@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 // ============================================================
-// KALIBRASI TANGKI & SENSOR — PIECEWISE LINEAR
+// KALIBRASI TANGKI & SENSOR — REGRESI LINEAR (least squares)
 // --------------------------------
 // File ini SERING diubah saat:
 //   - Pindah tangki (GWT-001 → GWT-002)
@@ -11,42 +11,48 @@
 //   - Perubahan mounting
 //
 // Cara pakai:
-//   1. Ukur jarak sensor → permukaan air (cm) untuk tiap volume
-//   2. Masukkan ke CALIBRATION_TABLE (urut jarak NAIK)
-//   3. Firmware otomatis hitung volume & level
+//   1. Ukur jarak sensor → permukaan air (cm) di 3 titik
+//   2. Masukkan 3 titik di bawah (C1/C2/C3)
+//   3. m & b dihitung otomatis, firmware pakai V = m·d + b
 //
-// Rumus (persamaan linear per interval):
-//   V(d) = V1 + ((V2 - V1) / (d2 - d1)) * (d - d1)
+// Rumus regresi linear (n = 3):
+//   m = (n·ΣdV − Σd·ΣV) / (n·Σd² − (Σd)²)
+//   b = (ΣV − m·Σd) / n
+//
+// Dengan 3 titik GWT-001 (4.16,1000) (9.58,700) (15.89,0):
+//   V(d) = −85.9490·d + 1415.5564
 // ============================================================
 
 // --- Suhu ruang (kompensasi kecepatan suara) ---
 constexpr float TEMPERATURE_C = 16.0f;
 
-// --- Titik kalibrasi ---
-// PENTING: urut berdasarkan jarak NAIK (4.19 → 16.02)
-//          sehingga volume MENURUN (1000 → 0)
-struct CalibrationPoint {
-    float distance_cm;
-    float volume_ml;
-};
+// --- 3 titik kalibrasi (UBAH DI SINI SAJA) ---
+constexpr float CAL_D1 = 4.16f;    constexpr float CAL_V1 = 1000.0f;
+constexpr float CAL_D2 = 9.58f;    constexpr float CAL_V2 = 700.0f;
+constexpr float CAL_D3 = 15.89f;   constexpr float CAL_V3 = 0.0f;
 
-constexpr CalibrationPoint CALIBRATION_TABLE[] = {
-    { 4.19f, 1000.0f},
-    { 5.625f, 900.0f},
-    { 6.10f,  800.0f},
-    { 8.66f,  600.0f},
-    {10.00f,  500.0f},
-    {11.34f,  400.0f},
-    {12.66f,  300.0f},
-    {14.00f,  200.0f},
-    {15.35f,  100.0f},
-    {16.02f,    0.0f}
-};
+// --- Volume penuh (batas clamp atas) ---
+constexpr float CALIBRATION_MAX_VOLUME = 1000.0f;
 
-constexpr size_t CALIBRATION_SIZE =
-    sizeof(CALIBRATION_TABLE) / sizeof(CALIBRATION_TABLE[0]);
+// --- Regresi linear least-squares, dihitung di compile time ---
+constexpr float CAL_N      = 3.0f;
+constexpr float CAL_SUM_D  = CAL_D1 + CAL_D2 + CAL_D3;              // Σd  = 29.63
+constexpr float CAL_SUM_V  = CAL_V1 + CAL_V2 + CAL_V3;              // ΣV  = 1700
+constexpr float CAL_SUM_DD = CAL_D1 * CAL_D1
+                           + CAL_D2 * CAL_D2
+                           + CAL_D3 * CAL_D3;                       // Σd² = 361.5741
+constexpr float CAL_SUM_DV = CAL_D1 * CAL_V1
+                           + CAL_D2 * CAL_V2
+                           + CAL_D3 * CAL_V3;                       // ΣdV = 10866
 
-constexpr float CALIBRATION_MAX_VOLUME = CALIBRATION_TABLE[0].volume_ml;
+// m = (n·ΣdV − Σd·ΣV) / (n·Σd² − (Σd)²)   →  −85.9490
+constexpr float CALIBRATION_SLOPE =
+    (CAL_N * CAL_SUM_DV - CAL_SUM_D * CAL_SUM_V) /
+    (CAL_N * CAL_SUM_DD - CAL_SUM_D * CAL_SUM_D);
+
+// b = (ΣV − m·Σd) / n                       →  1415.5564
+constexpr float CALIBRATION_INTERCEPT =
+    (CAL_SUM_V - CALIBRATION_SLOPE * CAL_SUM_D) / CAL_N;
 
 // --- Fungsi helper ---
 namespace Calibration {
@@ -57,42 +63,14 @@ namespace Calibration {
         return echoUs * speed / 20000.0f;               // cm
     }
 
-    // Jarak (cm) → volume (ml) via piecewise linear interpolation.
+    // Jarak (cm) → volume (ml) via persamaan regresi linear.
     //
-    // Cari 2 titik kalibrasi yang mengapit distanceCm, lalu pakai:
-    //   V = V1 + ((V2 - V1) / (d2 - d1)) * (d - d1)
+    //   V(d) = m·d + b
+    //
+    // Hasil di-clamp supaya di luar rentang kalibrasi tetap 0..MAX_VOLUME.
     inline float distanceToVolume(float distanceCm) {
-
-        // Di atas level maksimum (sensor lebih dekat dari kalibrasi penuh)
-        if (distanceCm <= CALIBRATION_TABLE[0].distance_cm) {
-            return CALIBRATION_TABLE[0].volume_ml;
-        }
-
-        // Di bawah level minimum (wadah kosong / jarak terlalu jauh)
-        if (distanceCm >= CALIBRATION_TABLE[CALIBRATION_SIZE - 1].distance_cm) {
-            return CALIBRATION_TABLE[CALIBRATION_SIZE - 1].volume_ml;
-        }
-
-        for (size_t i = 0; i < CALIBRATION_SIZE - 1; i++) {
-
-            float d1 = CALIBRATION_TABLE[i].distance_cm;
-            float d2 = CALIBRATION_TABLE[i + 1].distance_cm;
-
-            float v1 = CALIBRATION_TABLE[i].volume_ml;
-            float v2 = CALIBRATION_TABLE[i + 1].volume_ml;
-
-            // Cari interval yang mengapit (d1 ≤ d ≤ d2, d1 selalu < d2)
-            if (distanceCm >= d1 && distanceCm <= d2) {
-
-                // Interpolasi linear
-                float ratio = (distanceCm - d1) / (d2 - d1);
-
-                return v1 + ratio * (v2 - v1);
-            }
-        }
-
-        // Seharusnya tidak pernah sampai sini
-        return 0.0f;
+        float volume = (CALIBRATION_SLOPE * distanceCm) + CALIBRATION_INTERCEPT;
+        return constrain(volume, 0.0f, CALIBRATION_MAX_VOLUME);
     }
 
     // Volume (ml) → level (%)
