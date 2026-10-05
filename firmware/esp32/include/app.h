@@ -32,8 +32,8 @@ public:
     void loop();
 
 private:
-    // Buat string JSON dari hasil baca sensor, misal: {"distance_cm":12.34}
-    String buildJson(float distanceCM);
+    // v1.2: Buat string JSON dari echo time, misal: {"echo_us":880}
+    String buildJson(unsigned long echoUs);
 
     IWiFiConnector &_wifi;
     IMqttConnector &_mqtt;

@@ -17,7 +17,10 @@ public:
     // Setiap pin sebagai output/input.
     bool begin() override;
 
-    // Ukur jarak (cm). -1 bila echo timeout.
+    // v1.2: Return raw echo time in microseconds (for Node-RED conversion)
+    unsigned long readEchoUs();
+
+    // Legacy: keep for backward compatibility
     float readCM() override;
 
 private:

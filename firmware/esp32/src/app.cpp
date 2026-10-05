@@ -61,15 +61,16 @@ void App::loop()
     {
         _lastPublish = millis();
 
-        float distanceCM = _sensor.readCM();
+        // v1.2: Send raw echo time in microseconds
+        unsigned long echoUs = _sensor.readEchoUs();
 
-        if (distanceCM < 0)
+        if (echoUs == 0)
         {
             Serial.println("HC-SR04 timeout!");
             return;
         }
 
-        String payload = buildJson(distanceCM);
+        String payload = buildJson(echoUs);
 
         if (_mqtt.publish(payload.c_str()))
         {
