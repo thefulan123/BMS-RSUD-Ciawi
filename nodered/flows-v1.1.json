@@ -1,0 +1,33 @@
+[
+    {
+        "id": "v1.1-mqtt-in",
+        "type": "mqtt in",
+        "name": "BMS v1.1 (JSON distance)",
+        "topic": "bms/gwt1",
+        "qos": "0",
+        "broker": "local-emqx",
+        "x": 150,
+        "y": 100,
+        "wires": [["v1.1-function"]]
+    },
+    {
+        "id": "v1.1-function",
+        "type": "function",
+        "name": "Parse JSON & Convert",
+        "func": "// Input: {distance_cm: 14.63}\nvar d = msg.payload.distance_cm;\n\n// Piecewise linear volume\nvar volume;\nif (d >= 16.30) {\n    volume = 0;\n} else if (d >= 15.98) {\n    volume = (16.30 - d) / (16.30 - 15.98) * 100;\n} else if (d >= 5.13) {\n    volume = 100 + (15.98 - d) / (15.98 - 5.13) * 900;\n} else {\n    volume = 1000;\n}\n\nmsg.payload = {\n    distance_cm: d,\n    volume_ml: Math.round(volume * 100) / 100\n};\n\nreturn msg;",
+        "outputs": 1,
+        "x": 350,
+        "y": 100,
+        "wires": [["v1.1-influxdb-out"]]
+    },
+    {
+        "id": "v1.1-influxdb-out",
+        "type": "influxdb out",
+        "name": "InfluxDB",
+        "influxdb": "local-influxdb",
+        "measurement": "sensor_data",
+        "x": 550,
+        "y": 100,
+        "wires": []
+    }
+]
