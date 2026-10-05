@@ -47,9 +47,9 @@ HC-SR04 → raw echo → temperature compensation → calibration table → volu
 **File kunci: `firmware/esp32/include/calibration.h`**
 
 - `TEMPERATURE_C` — suhu ruang, untuk kompensasi kecepatan suhu
-- `CALIBRATION_MAX_VOLUME` / `MIN_DISTANCE` / `MAX_DISTANCE` — 3 parameter tangki
+- `CALIBRATION_TABLE` — titik kalibrasi jarak → volume (urut jarak naik)
 - `Calibration::echoUsToDistance()` — rumus suhu
-- `Calibration::distanceToVolume()` — linear global `V = m·d + b` (auto-calculated)
+- `Calibration::distanceToVolume()` — piecewise linear `V = V1 + ((V2-V1)/(d2-d1))·(d-d1)`
 - `Calibration::volumeToPercent()` — level %
 
 Flow: `nodered/flows-v1.2.json` (versi baru — tinggal parse & forward)
