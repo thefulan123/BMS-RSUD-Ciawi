@@ -38,11 +38,14 @@ docker compose up -d
 
 ### 3. Akses Dashboard
 
-| App | URL |
-|-----|-----|
-| Grafana | http://localhost:3000 |
-| Node-RED | http://localhost:1880 |
-| EMQX Dashboard | http://localhost:18083 |
+| App | URL | Keterangan |
+|-----|-----|------------|
+| **Grafana** | http://localhost:3000 | Dashboard monitoring |
+| **Node-RED** | http://localhost:1880 | Flow programming |
+| **EMQX Dashboard** | http://localhost:18083 | MQTT broker management |
+| **Chronograf** | http://localhost:8888 | InfluxDB UI (opsional) |
+| **InfluxDB API** | http://localhost:8086 | Database API |
+| **Komodo** | http://localhost:9120 | Container management |
 
 ## Dokumentasi
 
