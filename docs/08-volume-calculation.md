@@ -1,8 +1,8 @@
 # Volume Calculation
 
 Perhitungan volume **dilakukan di firmware MCU** (`include/calibration.h`),
-menggunakan **natural cubic spline** — kurva halus yang lewat tepat di semua
-titik kalibrasi, lengkap dengan nilai diferensial (gradien) di tiap titik.
+menggunakan **piecewise linear** — kumpulan persamaan linear yang disambungkan
+di titik-titik kalibrasi.
 
 ```
 HC-SR04
@@ -11,47 +11,22 @@ raw echo (µs)
    ↓
 temperature compensation      ← v = 331.3 + 0.606·T
    ↓
-cubic spline                  ← V = a + b·t + c·t² + d·t³
+piecewise linear              ← V = V1 + ((V2-V1)/(d2-d1))·(d-d1)
    ↓
-volume + level % + differential
+volume + level %
    ↓
 MQTT
 ```
 
-## Persamaan Spline
-
-Per interval:
+## Rumus Umum
 
 ```
-V(t) = a + b·t + c·t² + d·t³      t = distance − titik awal interval
+V(d) = V1 + ((V2 - V1) / (d2 - d1)) × (d - d1)
 ```
 
-Evaluasi dengan Horner (3 operasi):
-
-```
-V = a + t·(b + t·(c + t·d))
-```
-
-**Diferensial** (turunan pertama):
-
-```
-V'(t) = b + 2·c·t + 3·d·t²        ← satuan ml/cm
-```
-
-## Titik Kalibrasi (GWT-001)
-
-| Distance | Volume |
-|----------|--------|
-| 4.19 cm | 1000 ml |
-| 5.625 cm | 900 ml |
-| 6.10 cm | 800 ml |
-| 8.66 cm | 600 ml |
-| 10.00 cm | 500 ml |
-| 11.34 cm | 400 ml |
-| 12.66 cm | 300 ml |
-| 14.00 cm | 200 ml |
-| 15.35 cm | 100 ml |
-| 16.02 cm | 0 ml |
+Program mencari 2 titik kalibrasi yang mengapit `d`, lalu pakai rumus ini.
+Jadi kalau kalibrasi GWT berubah, cukup ganti tabel titiknya —
+tidak perlu hitung ulang persamaan satu-satu.
 
 ## Temperature Compensation
 
@@ -64,20 +39,37 @@ inline float echoUsToDistance(unsigned long echoUs, float temperatureC) {
 }
 ```
 
-## Implementasi di Firmware
+## Tabel Kalibrasi (urut jarak naik)
+
+```cpp
+constexpr CalibrationPoint CALIBRATION_TABLE[] = {
+    { 4.19f, 1000.0f},
+    { 5.625f, 900.0f},
+    { 6.10f,  800.0f},
+    { 8.66f,  600.0f},
+    {10.00f,  500.0f},
+    {11.34f,  400.0f},
+    {12.66f,  300.0f},
+    {14.00f,  200.0f},
+    {15.35f,  100.0f},
+    {16.02f,    0.0f}
+};
+```
+
+## Interpolasi
 
 ```cpp
 inline float distanceToVolume(float distanceCm) {
-    if (distanceCm <= KNOTS[0].distance_cm)          return KNOTS[0].volume_ml;
-    if (distanceCm >= KNOTS[KNOT_COUNT-1].distance_cm)
-        return KNOTS[KNOT_COUNT-1].volume_ml;
+    if (distanceCm <= TABLE[0].distance_cm)   return TABLE[0].volume_ml;
+    if (distanceCm >= TABLE[N-1].distance_cm) return TABLE[N-1].volume_ml;
 
-    for (size_t i = 0; i < SEG_COUNT; i++) {
-        if (distanceCm <= KNOTS[i + 1].distance_cm) {
-            float t = distanceCm - KNOTS[i].distance_cm;
-            const SplineSegment &s = SPLINE[i];
-            float volume = s.a + t * (s.b + t * (s.c + t * s.d)); // Horner
-            return constrain(volume, 0.0f, CALIBRATION_MAX_VOLUME);
+    for (size_t i = 0; i < N - 1; i++) {
+        float d1 = TABLE[i].distance_cm,     d2 = TABLE[i+1].distance_cm;
+        float v1 = TABLE[i].volume_ml,       v2 = TABLE[i+1].volume_ml;
+
+        if (distanceCm >= d1 && distanceCm <= d2) {
+            float ratio = (distanceCm - d1) / (d2 - d1);
+            return v1 + ratio * (v2 - v1);
         }
     }
     return 0.0f;
@@ -93,77 +85,41 @@ inline float volumeToPercent(float volumeMl) {
 }
 ```
 
-## Tiap Diferensial Punya Nilai
+## Daftar Persamaan per Interval
 
-Gradien `dV/dd` disimpan di `KNOTS[].slope` dan bisa dihitung di jarak
-manapun lewat `Calibration::distanceToSlope()`:
+| Interval (cm) | Persamaan V(d) |
+|---------------|----------------|
+| 4.19 – 5.625 | V = −69.6864·d + 1291.9861 |
+| 5.625 – 6.10 | V = −210.5263·d + 2084.2105 |
+| 6.10 – 8.66 | V = −78.125·d + 1276.5625 |
+| 8.66 – 10.00 | V = −74.6269·d + 1246.2687 |
+| 10.00 – 11.34 | V = −74.6269·d + 1246.2687 |
+| 11.34 – 12.66 | V = −75.7576·d + 1259.0909 |
+| 12.66 – 14.00 | V = −74.6269·d + 1244.7761 |
+| 14.00 – 15.35 | V = −74.0741·d + 1237.0370 |
+| 15.35 – 16.02 | V = −149.2537·d + 2391.0448 |
 
-| Distance | Volume | Diferensial | Arti |
-|----------|--------|-------------|------|
-| 4.19 cm | 1000.0 ml | −11.61 ml/cm | hampir penuh, landai |
-| 5.625 cm | 900.0 ml | −185.84 ml/cm | curam |
-| 6.10 cm | 800.0 ml | −202.21 ml/cm | **paling curam** |
-| 6.68 cm | 709.0 ml | −116.52 ml/cm | |
-| 8.66 cm | 600.0 ml | −52.55 ml/cm | landai |
-| 10.00 cm | 500.0 ml | −80.59 ml/cm | |
-| 14.00 cm | 200.0 ml | −61.29 ml/cm | landai |
-| 15.35 cm | 100.0 ml | −121.86 ml/cm | curam di dasar |
-| 16.02 cm | 0.0 ml | −162.95 ml/cm | dasar tangki |
+## Contoh Perhitungan
 
-Gradien **kontinu antar interval** (beda kiri-kanan di knot ~1e-14) —
-tidak ada lompatan, jadi grafik di Grafana mulus.
+| Distance | Interval | Volume | Level |
+|----------|----------|--------|-------|
+| 3.00 cm | clamp | 1000.0 ml | 100.0% |
+| 4.19 cm | batas | 1000.0 ml | 100.0% |
+| 6.10 cm | titik | 800.0 ml | 80.0% |
+| **6.68 cm** | 6.10–8.66 | **754.7 ml** | **75.5%** |
+| 8.66 cm | titik | 600.0 ml | 60.0% |
+| 10.00 cm | titik | 500.0 ml | 50.0% |
+| 13.00 cm | 12.66–14.00 | 274.6 ml | 27.5% |
+| 16.02 cm | batas | 0.0 ml | 0.0% |
+| 20.00 cm | clamp | 0.0 ml | 0.0% |
 
-## Contoh Perhitungan: 6.68 cm
-
-```
-t = 6.68 - 6.10 = 0.58
-segmen: a=800, b=-202.215, c=86.9562, d=-15.032634
-
-V   = 800 + 0.58·(-202.215 + 0.58·(86.9562 + 0.58·(-15.032634)))
-    ≈ 709.0 ml
-
-V'  = -202.215 + 0.58·(2·86.9562 + 3·(-15.032634)·0.58)
-    ≈ -116.52 ml/cm
-```
-
-## Tabel Hasil
-
-| Distance | Volume | Level |
-|----------|--------|-------|
-| 4.19 cm | 1000.0 ml | 100.0% |
-| 5.00 cm | 975.6 ml | 97.6% |
-| 6.68 cm | 709.0 ml | 70.9% |
-| 8.00 cm | 626.6 ml | 62.7% |
-| 9.58 cm | 534.5 ml | 53.5% |
-| 12.00 cm | 351.1 ml | 35.1% |
-| 15.89 cm | 21.1 ml | 2.1% |
-| 16.02 cm | 0.0 ml | 0.0% |
-| >16.02 cm | 0.0 ml (clamp) | 0.0% |
-
-## Sifat yang Diverifikasi
-
-- ✅ Lewat tepat semua 10 titik (error 0)
-- ✅ Gradien kontinu di tiap knot
-- ✅ Monotonic (0 violations pada sampling 0.001 cm)
-- ✅ Range tetap 0..1000 ml (no overshoot)
-
-## Regenerate Koefisien
-
-Kalau titik kalibrasi berubah:
-
-```bash
-python3 docs/tools/gen_spline.py titik.txt
-# tempel outputnya ke KNOTS[] dan SPLINE[] di calibration.h
-```
-
-## Output MQTT (v1.4)
+## Output MQTT
 
 ```json
 {
   "distance_cm": 6.68,
-  "volume_ml": 709.0,
-  "level_percent": 70.9,
-  "differential": -116.52
+  "volume_ml": 754.7,
+  "level_percent": 75.5
 }
 ```
 

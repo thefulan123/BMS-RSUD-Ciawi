@@ -1,13 +1,11 @@
 #include "hcsr04_sensor.h"
 
-// Constructor: simpan nomor pin.
 HcSr04Sensor::HcSr04Sensor(int trigPin, int echoPin)
     : _trigPin(trigPin),
       _echoPin(echoPin)
 {
 }
 
-// Cara pakai: panggil sekali di setup().
 bool HcSr04Sensor::begin()
 {
     pinMode(_trigPin, OUTPUT);
@@ -16,8 +14,7 @@ bool HcSr04Sensor::begin()
     return true;
 }
 
-// Echo time mentah dalam mikrodetik (µs). 0 bila timeout.
-// Dipakai untuk debug / kalibrasi manual.
+// v1.2: Return raw echo time in microseconds (for Node-RED conversion)
 unsigned long HcSr04Sensor::readEchoUs()
 {
     digitalWrite(_trigPin, LOW);
@@ -28,7 +25,7 @@ unsigned long HcSr04Sensor::readEchoUs()
 
     digitalWrite(_trigPin, LOW);
 
-    // Timeout 30ms = ~5 meter jangkauan maks
+    // Return raw echo duration in microseconds (timeout 30ms = 30000µs)
     return pulseIn(_echoPin, HIGH, 30000);
 }
 
@@ -36,7 +33,7 @@ unsigned long HcSr04Sensor::readEchoUs()
 // Pipeline: HC-SR04 → raw echo → temperature compensation → calibration → reading
 SensorReading HcSr04Sensor::read()
 {
-    SensorReading r = {0.0f, 0.0f, 0.0f, 0.0f, false};
+    SensorReading r = {0.0f, 0.0f, 0.0f, false};
 
     unsigned long echoUs = readEchoUs();
 
@@ -48,21 +45,17 @@ SensorReading HcSr04Sensor::read()
     // 1. Echo time → jarak, dengan kompensasi suhu (v = 331.3 + 0.606*T)
     r.distance_cm = Calibration::echoUsToDistance(echoUs, TEMPERATURE_C);
 
-    // 2. Jarak → volume, natural cubic spline (halus, lewat tepat tiap titik)
+    // 2. Jarak → volume, piecewise linear: V = V1 + ((V2-V1)/(d2-d1))*(d-d1)
     r.volume_ml = Calibration::distanceToVolume(r.distance_cm);
 
     // 3. Volume → level persen
     r.level_percent = Calibration::volumeToPercent(r.volume_ml);
 
-    // 4. Diferensial (gradien dV/dd) di titik ini
-    r.differential = Calibration::distanceToSlope(r.distance_cm);
-
     r.valid = true;
     return r;
 }
 
-// Cara pakai: panggil untuk membaca jarak. Kembalikan -1 bila timeout.
-// Ambil 3 sampel lalu rata-rata supaya lebih stabil (noise berkurang).
+// Legacy: keep for backward compatibility
 float HcSr04Sensor::readCM()
 {
     float samples[3];
@@ -86,12 +79,12 @@ float HcSr04Sensor::readCM()
             samples[count++] = Calibration::echoUsToDistance(duration, TEMPERATURE_C);
         }
 
-        delay(50);  // jeda antar sampel
+        delay(50);
     }
 
     if (count == 0)
     {
-        return -1;  // Semua sampel timeout
+        return -1;
     }
 
     float sum = 0;

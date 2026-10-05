@@ -17,19 +17,15 @@
 
 ## Payload Format
 
-### v1.4 (aktif) — spline di MCU
+### v1.2 (aktif) — firmware hitung di MCU
 
 ```json
 {
-  "distance_cm": 6.68,
-  "volume_ml": 709.0,
-  "level_percent": 70.9,
-  "differential": -116.52
+  "distance_cm": 13.42,
+  "volume_ml": 247.0,
+  "level_percent": 24.7
 }
 ```
-
-Field `differential` = gradien dV/dd (ml per cm) — seberapa cepat volume
-berubah tiap 1 cm penurunan air.
 
 ### v1.1 (legacy)
 
@@ -44,7 +40,7 @@ berubah tiap 1 cm penurunan air.
 
 ```bash
 mosquitto_pub -h broker.avisha.id -p 1883 -t "bms/gwt1" \
-  -m '{"distance_cm":6.68,"volume_ml":709.0,"level_percent":70.9,"differential":-116.52}' \
+  -m '{"distance_cm":13.42,"volume_ml":247.0,"level_percent":24.7}' \
   -u bms -P soke1234
 ```
 

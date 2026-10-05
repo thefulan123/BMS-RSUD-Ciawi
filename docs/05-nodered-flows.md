@@ -2,14 +2,14 @@
 
 ## Flow Structure
 
-### v1.4 (aktif) — firmware sudah hitung volume di MCU
+### v1.2 (aktif) — firmware sudah hitung volume di MCU
 
 ```
 [MQTT in: bms/gwt1] → [Function: parse & flatten] → [InfluxDB out]
 ```
 
 Node-RED **tidak perlu** konversi jarak → volume lagi, karena ESP32 sudah mengirim
-`distance_cm`, `volume_ml`, `level_percent`, dan `differential` langsung.
+`distance_cm`, `volume_ml`, dan `level_percent` langsung.
 
 ### v1.1 (legacy) — konversi di Node-RED
 
@@ -27,11 +27,11 @@ Node-RED **tidak perlu** konversi jarak → volume lagi, karena ESP32 sudah meng
 | Username | bms |
 | Password | soke1234 |
 
-## Function Node (v1.4)
+## Function Node (v1.2)
 
 ```javascript
-// Firmware v1.4 (spline) sudah hitung semua di MCU.
-// Input: {distance_cm:6.68, volume_ml:709.0, level_percent:70.9, differential:-116.52}
+// Firmware v1.2 sudah hitung semua di MCU.
+// Input: {distance_cm:13.42, volume_ml:247.0, level_percent:24.7}
 
 var p = msg.payload;
 
@@ -51,8 +51,7 @@ if (p.distance_cm === undefined) {
 msg.payload = {
     distance_cm: Number(p.distance_cm),
     volume_ml: Number(p.volume_ml || 0),
-    level_percent: Number(p.level_percent || 0),
-    differential: Number(p.differential || 0)
+    level_percent: Number(p.level_percent || 0)
 };
 
 return msg;

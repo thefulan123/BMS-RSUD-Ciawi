@@ -1,136 +1,111 @@
 # Sensor Calibration
 
-Kalibrasi **di firmware MCU**, pakai **natural cubic spline** — kurva halus
-yang **lewat tepat di semua titik kalibrasi**, dengan nilai diferensial
-(gradien) di tiap titik.
+Kalibrasi **di firmware MCU**, pakai **piecewise linear** — kumpulan persamaan linear
+yang disambungkan di titik-titik kalibrasi.
 Semua parameter ada di satu file: **`firmware/esp32/include/calibration.h`**
 
-> Pindah tangki / ganti sensor → ganti **tabel titik** + regenerate koefisien.
-> Hasilnya mulus kayak jarum analog, tanpa step.
+> Pindah tangki / ganti sensor → ganti **tabel titik** saja, compile ulang.
+> Persamaan per interval dihitung otomatis — tidak perlu hitung manual.
 
-## Kenapa Spline?
-
-| Metode | Lewat tepat tiap titik? | Gradien kontinu? | Halus? |
-|--------|------------------------|------------------|--------|
-| Linear regression (3 titik) | ❌ | ✅ | garis lurus |
-| Piecewise linear | ✅ | ❌ (patah di titik) | siku-siku |
-| **Cubic spline** | ✅ | ✅ | ✅ **mulus** |
-
-Spline = kumpulan persamaan kubik yang disambungkan, **turunan pertamanya
-kontinu** di tiap sambungan — jadi gak ada sudut tajam.
-
-## Rumus
-
-Per interval `i` (t = distance − titik awal interval):
+## Rumus (Persamaan Linear per Interval)
 
 ```
-V(t) = a + b·t + c·t² + d·t³
+V(d) = V1 + ((V2 - V1) / (d2 - d1)) × (d - d1)
 ```
 
-Evaluasi pakai Horner (cepat, 3 kali operasi):
+| Simbol | Arti |
+|--------|------|
+| `d` | jarak sensor saat ini (cm) |
+| `V` | volume hasil (ml) |
+| `d1, V1` | titik kalibrasi pertama (interval bawah) |
+| `d2, V2` | titik kalibrasi kedua (interval atas) |
+
+Program tinggal **cari 2 titik yang mengapit `d`**, lalu pakai rumus di atas.
+
+## Tabel Kalibrasi GWT-001
+
+**PENTING: urut berdasarkan jarak NAIK** (4.19 → 16.02), sehingga volume MENURUN.
+
+| Distance | Volume |
+|----------|--------|
+| 4.19 cm | 1000 ml |
+| 5.625 cm | 900 ml |
+| 6.10 cm | 800 ml |
+| 8.66 cm | 600 ml |
+| 10.00 cm | 500 ml |
+| 11.34 cm | 400 ml |
+| 12.66 cm | 300 ml |
+| 14.00 cm | 200 ml |
+| 15.35 cm | 100 ml |
+| 16.02 cm | 0 ml |
+
+## Daftar Persamaan per Interval
+
+Dihitung otomatis dari tabel:
+
+| Interval (cm) | Persamaan V(d) |
+|---------------|----------------|
+| 4.19 – 5.625 | V = −69.6864·d + 1291.9861 |
+| 5.625 – 6.10 | V = −210.5263·d + 2084.2105 |
+| **6.10 – 8.66** | **V = −78.125·d + 1276.5625** |
+| 8.66 – 10.00 | V = −74.6269·d + 1246.2687 |
+| 10.00 – 11.34 | V = −74.6269·d + 1246.2687 |
+| 11.34 – 12.66 | V = −75.7576·d + 1259.0909 |
+| 12.66 – 14.00 | V = −74.6269·d + 1244.7761 |
+| 14.00 – 15.35 | V = −74.0741·d + 1237.0370 |
+| 15.35 – 16.02 | V = −149.2537·d + 2391.0448 |
+
+## Contoh: 6.68 cm
+
+Masuk interval `6.10 ≤ d ≤ 8.66`, pakai `V = −78.125·d + 1276.5625`:
 
 ```
-V = a + t·(b + t·(c + t·d))
+V = 800 + ((600 - 800) / (8.66 - 6.10)) × (6.68 - 6.10)
+  = 800 + (-78.125 × 0.58)
+  ≈ 754.7 ml
 ```
 
-**Diferensial** (turunan pertama = laju perubahan volume per cm):
-
-```
-V'(t) = b + 2·c·t + 3·d·t²
-```
-
-## Tabel Kalibrasi GWT-001 (Knots)
-
-**Urut jarak NAIK** (4.19 → 16.02), volume MENURUN.
-
-| Distance | Volume | Diferensial (ml/cm) | Arti |
-|----------|--------|---------------------|------|
-| 4.19 cm | 1000 ml | −11.61 | hampir penuh → volume nyaris gak berubah |
-| 5.625 cm | 900 ml | −185.84 | **paling curam** — 1 cm ≈ 186 ml |
-| 6.10 cm | 800 ml | −202.21 | **paling curam** — tangki sempit di sini |
-| 8.66 cm | 600 ml | −52.55 | landai |
-| 10.00 cm | 500 ml | −80.59 | |
-| 11.34 cm | 400 ml | −72.84 | |
-| 12.66 cm | 300 ml | −79.24 | |
-| 14.00 cm | 200 ml | −61.29 | landai |
-| 15.35 cm | 100 ml | −121.86 | makin curam di dasar |
-| 16.02 cm | 0 ml | −162.95 | dasar tangki |
-
-**Tiap diferensial ada nilainya** — kolom `slope` di `KNOTS[]` menyimpan
-`dV/dd` di tiap titik, dan firmware bisa baca gradien di jarak manapun
-lewat `Calibration::distanceToSlope()`.
-
-## Koefisien Spline (SPLINE[])
-
-9 interval → 9 baris koefisien (a, b, c, d):
-
-```
-interval            a          b           c            d
-4.190 →  5.625   1000.0    -11.6072    0.000000   -28.204384
-5.625 →  6.100    900.0   -185.8448 -121.419871   146.228822
-6.100 →  8.660    800.0   -202.2150   86.956200   -15.032634
-8.660 → 10.000    600.0    -52.5529  -28.494432     8.971123
-10.000 → 11.340   500.0    -80.5923    7.569481    -2.326610
-11.340 → 12.660   400.0    -72.8391   -1.783491    -0.323855
-12.660 → 14.000   300.0    -79.2404   -3.065956     4.857356
-14.000 → 15.350   200.0    -61.2915   16.460616   -19.206802
-15.350 → 16.020   100.0   -121.8610  -61.326932    30.510911
-```
-
-Koefisien ini dihasilkan **offline** dari tabel titik (natural cubic spline,
-M₀ = Mₙ = 0). Cara regenerate → lihat bagian bawah.
-
-## Contoh Perhitungan: 6.68 cm
-
-Masuk interval `6.10 → 8.66`, t = 6.68 − 6.10 = 0.58:
-
-```
-V = 800 + 0.58·(-202.215 + 0.58·(86.9562 + 0.58·(-15.032634)))
-  ≈ 709.0 ml
-```
-
-Diferensialnya:
-
-```
-V' = -202.215 + 0.58·(2·86.9562 + 3·(-15.032634)·0.58)
-   ≈ -116.52 ml/cm
-```
-
-Artinya: di titik itu, **tiap 1 cm penurunan air ≈ 116.5 ml volume berkurang**.
-
-## Output MQTT (v1.4)
+Output MQTT:
 
 ```json
 {
   "distance_cm": 6.68,
-  "volume_ml": 709.0,
-  "level_percent": 70.9,
-  "differential": -116.52
+  "volume_ml": 754.7,
+  "level_percent": 75.5
 }
 ```
 
-## Tabel Hasil
+## Implementasi di Firmware
 
-| Distance | Volume | Level | Diferensial |
-|----------|--------|-------|-------------|
-| 4.19 cm | 1000.0 ml | 100.0% | −11.61 ml/cm |
-| 5.00 cm | 975.6 ml | 97.6% | −67.12 ml/cm |
-| 5.625 cm | 900.0 ml | 90.0% | −185.84 ml/cm |
-| 6.10 cm | 800.0 ml | 80.0% | −202.21 ml/cm |
-| **6.68 cm** | **709.0 ml** | **70.9%** | −116.52 ml/cm |
-| 8.66 cm | 600.0 ml | 60.0% | −52.55 ml/cm |
-| 10.00 cm | 500.0 ml | 50.0% | −80.59 ml/cm |
-| 14.00 cm | 200.0 ml | 20.0% | −61.29 ml/cm |
-| 15.35 cm | 100.0 ml | 10.0% | −121.86 ml/cm |
-| 16.02 cm | 0.0 ml | 0.0% | −162.95 ml/cm |
+Tidak perlu tulis 9 persamaan manual — cukup rumus umum + loop cari interval:
 
-## Sifat yang Diverifikasi
+```cpp
+inline float distanceToVolume(float distanceCm) {
 
-- ✅ **Lewat tepat** semua 10 titik (error 0.000000 ml)
-- ✅ **Gradien kontinu** di tiap knot (selisih kiri-kanan ~1e-14)
-- ✅ **Monotonic** — volume selalu turun saat jarak naik (0 violations)
-- ✅ **No overshoot** — tetap di rentang 0..1000 ml
-- ✅ Clamp: `d ≤ 4.19` → 1000 ml, `d ≥ 16.02` → 0 ml
+    // Clamp di luar rentang kalibrasi
+    if (distanceCm <= TABLE[0].distance_cm)          return TABLE[0].volume_ml;
+    if (distanceCm >= TABLE[N-1].distance_cm)        return TABLE[N-1].volume_ml;
+
+    for (size_t i = 0; i < N - 1; i++) {
+        float d1 = TABLE[i].distance_cm;
+        float d2 = TABLE[i + 1].distance_cm;
+        float v1 = TABLE[i].volume_ml;
+        float v2 = TABLE[i + 1].volume_ml;
+
+        if (distanceCm >= d1 && distanceCm <= d2) {
+            float ratio = (distanceCm - d1) / (d2 - d1);
+            return v1 + ratio * (v2 - v1);   // ← rumus umum
+        }
+    }
+    return 0.0f;
+}
+```
+
+### Kenapa urutan tabel penting?
+
+Karena tabel urut jarak **naik**, maka `d1 < d2` selalu benar.
+Kondisi `d1 ≤ d ≤ d2` jadi valid — beda kalau tabel diurutkan volume,
+kondisi bisa kebalik dan loop jatuh ke `return 0.0f` (bug lama: 6.68 cm → 0 ml).
 
 ## Kompensasi Suhu
 
@@ -148,19 +123,11 @@ dengan pembacaan aktual — tidak perlu ubah tempat lain.
 
 1. Kosongkan wadah → catat distance
 2. Isi bertahap (100, 200, ... ml) → catat distance tiap titik
-3. Masukkan ke `KNOTS[]` **urut jarak naik**
-4. Regenerate `SPLINE[]` (script Python di bawah)
-5. Compile & upload: `pio run --target upload`
-6. Cek serial monitor: pastikan `volume_ml` sesuai
+3. Masukkan ke `CALIBRATION_TABLE` **urut jarak naik**
+4. Compile & upload: `pio run --target upload`
+5. Cek serial monitor: pastikan `volume_ml` sesuai
 
-Titik kalibrasi makin banyak → kurva makin akurat mengikuti bentuk tangki.
-
-### Script Regenerate Koefisien
-
-```bash
-python3 docs/tools/gen_spline.py titik_kalibrasi.txt
-# Output: tempelan array SPLINE[] + KNOTS[] siap copy ke calibration.h
-```
+Titik kalibrasi makin banyak → makin akurat (mengikuti bentuk tangki aktual).
 
 ## Multi-Tangki
 
@@ -168,8 +135,8 @@ Firmware dasar sama untuk semua device. Yang beda hanya `calibration.h`:
 
 | Device | Calibration |
 |--------|-------------|
-| GWT-001 | `calibration.h` (spline GWT-001) |
-| GWT-002 | `calibration.h` (spline GWT-002) |
+| GWT-001 | `calibration.h` (tabel GWT-001) |
+| GWT-002 | `calibration.h` (tabel GWT-002) |
 
 Rencana lanjutan: simpan di **NVS** supaya OTA firmware tidak menghapus kalibrasi.
 
@@ -178,4 +145,4 @@ Rencana lanjutan: simpan di **NVS** supaya OTA firmware tidak menghapus kalibras
 - Pastikan sensor sejajar dengan permukaan air
 - Hindari gelombang/air bergerak
 - Kalibrasi di suhu yang sama dengan penggunaan
-- Pantau `differential` — nilai mendadak lonjak = kemungkinan noise sensor
+- Titik di ujung (penuh/kosong) wajib ada — itu batas clamp

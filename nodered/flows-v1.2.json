@@ -2,7 +2,7 @@
     {
         "id": "v1.2-mqtt-in",
         "type": "mqtt in",
-        "name": "BMS v1.4 (spline + diferensial)",
+        "name": "BMS v1.2 (JSON lengkap)",
         "topic": "bms/gwt1",
         "qos": "0",
         "broker": "local-emqx",
@@ -14,7 +14,7 @@
         "id": "v1.2-function",
         "type": "function",
         "name": "Parse & flatten",
-        "func": "// Firmware v1.4 (spline): semua perhitungan di MCU.\n// Input: {distance_cm:6.68, volume_ml:709.0, level_percent:70.9, differential:-116.52}\n//\n// Node-RED tinggal parse + flatten untuk InfluxDB.\n\nvar p = msg.payload;\n\n// Handle string (beberapa broker kirim JSON sebagai string)\nif (typeof p === \"string\") {\n    try { p = JSON.parse(p); } catch (e) {\n        node.error(\"JSON parse error: \" + e.message, msg);\n        return null;\n    }\n}\n\nif (p.distance_cm === undefined) {\n    node.error(\"Payload tidak punya distance_cm\", msg);\n    return null;\n}\n\nmsg.payload = {\n    distance_cm: Number(p.distance_cm),\n    volume_ml: Number(p.volume_ml || 0),\n    level_percent: Number(p.level_percent || 0),\n    differential: Number(p.differential || 0)\n};\n\nreturn msg;",
+        "func": "// Firmware v1.2 sudah hitung semua di MCU.\n// Input: {distance_cm:13.42, volume_ml:247.0, level_percent:24.7}\n//\n// Node-RED tinggal parse + flatten untuk InfluxDB.\n\nvar p = msg.payload;\n\n// Handle string (beberapa broker kirim JSON sebagai string)\nif (typeof p === \"string\") {\n    try { p = JSON.parse(p); } catch (e) {\n        node.error(\"JSON parse error: \" + e.message, msg);\n        return null;\n    }\n}\n\nif (p.distance_cm === undefined) {\n    node.error(\"Payload tidak punya distance_cm\", msg);\n    return null;\n}\n\nmsg.payload = {\n    distance_cm: Number(p.distance_cm),\n    volume_ml: Number(p.volume_ml || 0),\n    level_percent: Number(p.level_percent || 0)\n};\n\nreturn msg;",
         "outputs": 1,
         "x": 350,
         "y": 100,

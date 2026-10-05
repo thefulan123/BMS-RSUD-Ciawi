@@ -11,7 +11,7 @@ ESP32 (HC-SR04) → [kalibrasi di MCU] → EMQX (MQTT) → Node-RED → InfluxDB
 Payload MQTT:
 
 ```json
-{"distance_cm":6.68,"volume_ml":709.0,"level_percent":70.9,"differential":-116.52}
+{"distance_cm":13.42,"volume_ml":247.0,"level_percent":24.7}
 ```
 
 ## Komponen
@@ -29,8 +29,7 @@ Payload MQTT:
 
 | Versi | Folder | Output MQTT | Konversi di |
 |-------|--------|-------------|-------------|
-| **v1.4 (aktif)** | `firmware/esp32/` | `distance_cm`, `volume_ml`, `level_percent`, `differential` | MCU (spline) |
-| v1.3 | (git history) | `distance_cm`, `volume_ml`, `level_percent` | MCU (regresi linear) |
+| **v1.3 (aktif)** | `firmware/esp32/` | `distance_cm`, `volume_ml`, `level_percent` | MCU |
 | v1.2 | `firmware/esp32/v1.2-time/` | `echo_us` | Node-RED |
 | v1.1 | `firmware/esp32/v1.1-distance/` | `distance_cm` | Node-RED |
 

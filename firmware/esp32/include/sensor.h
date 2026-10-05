@@ -8,14 +8,12 @@
  * Cara pakai: buat class baru dari IDistanceSensor, lalu inject ke App.
  */
 
-// Hasil bacaan lengkap: jarak, volume (hasil kalibrasi), level (%),
-// dan diferensial (gradien dV/dd — seberapa cepat volume berubah per cm).
+// Hasil bacaan lengkap: jarak, volume (hasil kalibrasi), dan level (%).
 struct SensorReading
 {
     float distance_cm;     // Jarak sensor → permukaan air
-    float volume_ml;       // Volume air hasil spline kalibrasi
+    float volume_ml;       // Volume air hasil interpolasi kalibrasi
     float level_percent;   // Persen isi tangki (0-100)
-    float differential;    // Gradien dV/dd (ml per cm) di titik ini
     bool valid;            // false bila timeout/sensor gagal
 };
 

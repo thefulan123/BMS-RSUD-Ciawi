@@ -40,38 +40,36 @@ firmware/esp32/
 ## Data Pipeline (di MCU)
 
 ```
-HC-SR04 → raw echo (µs) → temperature compensation → cubic spline → volume → % → differential
-                                                                                    ↓
-                                                  MQTT: {"distance_cm":6.68,
-                                                         "volume_ml":709.0,
-                                                         "level_percent":70.9,
-                                                         "differential":-116.52}
+HC-SR04 → raw echo (µs) → temperature compensation → calibration table → volume → %
+                                                                              ↓
+                                                              MQTT: {"distance_cm":13.42,
+                                                                     "volume_ml":247.0,
+                                                                     "level_percent":24.7}
 ```
 
 ## Kalibrasi
 
-Semua parameter tangki ada di **`include/calibration.h`**.
-Pindah tangki = ganti `KNOTS[]` + regenerate `SPLINE[]`.
+Semua parameter tangki ada di **`include/calibration.h`**. Pindah tangki = ubah 3 angka saja.
 
 ```cpp
 // Suhu ruang (nanti bisa diganti sensor suhu)
 constexpr float TEMPERATURE_C = 16.0f;
 
-// Titik kalibrasi (urut jarak naik) + diferensial (ml/cm) di tiap titik
-constexpr CalibrationKnot KNOTS[] = {
-    { 4.190f, 1000.0f,  -11.6072f},
-    { 5.625f,  900.0f, -185.8448f},
-    // ... lihat file lengkap
-    {16.020f,    0.0f, -162.9501f}
+// Tabel titik kalibrasi — urut jarak NAIK
+constexpr CalibrationPoint CALIBRATION_TABLE[] = {
+    { 4.19f, 1000.0f},
+    { 5.625f,  900.0f},
+    { 6.10f,   800.0f},
+    { 8.66f,   600.0f},
+    {10.00f,   500.0f},
+    {11.34f,   400.0f},
+    {12.66f,   300.0f},
+    {14.00f,   200.0f},
+    {15.35f,   100.0f},
+    {16.02f,     0.0f}
 };
-
-// Koefisien natural cubic spline per interval:
-//   V(t) = a + b·t + c·t² + d·t³
-// (regenerate dengan: python3 docs/tools/gen_spline.py)
-constexpr SplineSegment SPLINE[] = {
-    {1000.0000f, -11.6072f, 0.000000f, -28.204384f},
-    // ...
-};
+// Persamaan per interval dihitung otomatis:
+//   V = V1 + ((V2-V1)/(d2-d1))·(d-d1)
 ```
 
 Rumus kompensasi suhu (otomatis dipakai):
@@ -136,8 +134,8 @@ ESP32 BMS MQTT
 WiFi CONNECTED
 IP: 192.168.1.100
 MQTT: TERHUBUNG
-Distance: 6.68 cm | Volume: 709.0 ml | Level: 70.9 % | Diff: -116.52 ml/cm
-JSON: {"distance_cm":6.68,"volume_ml":709.0,"level_percent":70.9,"differential":-116.52}
+Distance: 13.42 cm | Volume: 247.0 ml | Level: 24.7 %
+JSON: {"distance_cm":13.42,"volume_ml":247.0,"level_percent":24.7}
 ```
 
 ## Strategi Multi-Tangki
