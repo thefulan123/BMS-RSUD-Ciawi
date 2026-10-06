@@ -74,13 +74,10 @@ void App::loop()
 
         if (_mqtt.publish(payload.c_str()))
         {
+            // Kalibrasi ulang: tampilkan jarak mentah dulu
             Serial.print("Distance: ");
             Serial.print(reading.distance_cm, 2);
-            Serial.print(" cm | Volume: ");
-            Serial.print(reading.volume_ml, 1);
-            Serial.print(" ml | Level: ");
-            Serial.print(reading.level_percent, 1);
-            Serial.println(" %");
+            Serial.println(" cm");
 
             Serial.print("JSON: ");
             Serial.println(payload);
@@ -92,16 +89,12 @@ void App::loop()
     }
 }
 
-// Buat payload JSON dari hasil bacaan lengkap (cara awam: susun string manual).
+// Buat payload JSON — kalibrasi ulang: hanya jarak dulu.
 String App::buildJson(const SensorReading &reading)
 {
     String payload = "{";
     payload += "\"distance_cm\":";
     payload += String(reading.distance_cm, 2);
-    payload += ",\"volume_ml\":";
-    payload += String(reading.volume_ml, 1);
-    payload += ",\"level_percent\":";
-    payload += String(reading.level_percent, 1);
     payload += "}";
     return payload;
 }

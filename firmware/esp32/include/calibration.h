@@ -5,18 +5,17 @@
 // ============================================================
 // KALIBRASI TANGKI & SENSOR — PIECEWISE LINEAR
 // --------------------------------
-// File ini SERING diubah saat:
-//   - Pindah tangki (GWT-001 → GWT-002)
-//   - Ganti sensor
-//   - Perubahan mounting
+// ⚠️  STATUS: TABEL DI BAWAH BELUM DIKALIBRASI ULANG
+//     (nilai lama, dipertahankan sebagai referensi awal)
 //
-// Cara pakai:
-//   1. Ukur jarak sensor → permukaan air (cm) untuk tiap volume
-//   2. Masukkan ke CALIBRATION_TABLE (urut jarak NAIK)
-//   3. Firmware otomatis hitung volume & level
+//     Sementara firmware HANYA mengirim distance_cm.
+//     Volume & level dimatikan sampai kalibrasi ulang selesai.
 //
-// Rumus (persamaan linear per interval):
-//   V(d) = V1 + ((V2 - V1) / (d2 - d1)) * (d - d1)
+// Cara kalibrasi ulang:
+//   1. Isi tangki bertahap, catat jarak dari serial monitor
+//   2. Masukkan titik baru urut jarak NAIK
+//   3. Nyalakan lagi distanceToVolume() di hcsr04_sensor.cpp
+//   4. Nyalakan lagi volume_ml & level_percent di app.cpp
 // ============================================================
 
 // --- Suhu ruang (kompensasi kecepatan suara) ---
