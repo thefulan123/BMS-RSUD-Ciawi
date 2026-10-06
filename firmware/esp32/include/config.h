@@ -38,7 +38,7 @@ struct SensorSettings
 struct DeviceSettings
 {
     unsigned long serialBaud = 115200;       // Kecepatan Serial Monitor
-    unsigned long publishIntervalMs = 2000;  // Interval kirim pesan (ms)
+    unsigned long publishIntervalMs = 5000;  // Interval kirim pesan (ms)
     WifiSettings wifi;                       // Pengaturan WiFi
     MqttSettings mqtt;                       // Pengaturan MQTT
     SensorSettings sensor;                   // Pengaturan sensor jarak

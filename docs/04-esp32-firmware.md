@@ -117,7 +117,7 @@ cd firmware/esp32
 2. Connect dari phone/laptop
 3. Buka `192.168.4.1`
 4. Pilih WiFi lo → isi password
-5. ESP32 connect → MQTT publish tiap 2 detik
+5. ESP32 connect → MQTT publish tiap 5 detik
 
 ## OTA Update
 
