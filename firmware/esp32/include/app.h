@@ -33,7 +33,8 @@ public:
 
 private:
     // Buat string JSON dari hasil bacaan sensor lengkap, misal:
-    // {"distance_cm":13.42,"volume_ml":247,"level_percent":24.7}
+    // {"distance_cm":13.42,"volume_ml":247,"level_percent":24.7,
+    //  "volume_b_ml":232,"level_b_percent":23.2}
     String buildJson(const SensorReading &reading);
 
     IWiFiConnector &_wifi;

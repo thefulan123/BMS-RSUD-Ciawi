@@ -5,47 +5,62 @@
 // ============================================================
 // KALIBRASI TANGKI & SENSOR — PIECEWISE LINEAR
 // --------------------------------
-// ⚠️  STATUS: TABEL DI BAWAH BELUM DIKALIBRASI ULANG
-//     (nilai lama, dipertahankan sebagai referensi awal)
+// STATUS: KALIBRASI ULANG SELESAI — 11 titik (0..1000 ml)
+// Tanggal: 07 Okt 2026, sensor GWT-001, suhu ruang 16 C
 //
-//     Sementara firmware HANYA mengirim distance_cm.
-//     Volume & level dimatikan sampai kalibrasi ulang selesai.
+// Rumus (persamaan linear per interval):
+//   V(d) = V1 + ((V2 - V1) / (d2 - d1)) * (d - d1)
 //
-// Cara kalibrasi ulang:
+// Cara kalibrasi ulang lagi (pindah tangki / ganti sensor):
 //   1. Isi tangki bertahap, catat jarak dari serial monitor
-//   2. Masukkan titik baru urut jarak NAIK
-//   3. Nyalakan lagi distanceToVolume() di hcsr04_sensor.cpp
-//   4. Nyalakan lagi volume_ml & level_percent di app.cpp
+//   2. Masukkan titik urut jarak NAIK (volume MENURUN)
+//   3. Sesuaikan CALIBRATION_MAX_VOLUME dengan kapasitas tangki
 // ============================================================
 
 // --- Suhu ruang (kompensasi kecepatan suara) ---
 constexpr float TEMPERATURE_C = 16.0f;
 
 // --- Titik kalibrasi ---
-// PENTING: urut berdasarkan jarak NAIK (4.19 → 16.02)
-//          sehingga volume MENURUN (1000 → 0)
+// PENTING: urut berdasarkan jarak NAIK (3.85 -> 15.87)
+//          sehingga volume MENURUN (1000 -> 0)
 struct CalibrationPoint {
     float distance_cm;
     float volume_ml;
 };
 
 constexpr CalibrationPoint CALIBRATION_TABLE[] = {
-    { 4.19f, 1000.0f},
-    { 5.625f, 900.0f},
-    { 6.10f,  800.0f},
-    { 8.66f,  600.0f},
-    {10.00f,  500.0f},
-    {11.34f,  400.0f},
-    {12.66f,  300.0f},
-    {14.00f,  200.0f},
-    {15.35f,  100.0f},
-    {16.02f,    0.0f}
+    { 3.85f, 1000.0f},
+    { 5.42f,  900.0f},
+    { 6.99f,  800.0f},
+    { 7.93f,  700.0f},
+    { 9.24f,  600.0f},
+    { 9.92f,  500.0f},
+    {12.24f,  400.0f},
+    {12.91f,  300.0f},
+    {14.22f,  200.0f},
+    {15.21f,  100.0f},
+    {15.87f,    0.0f}
 };
 
 constexpr size_t CALIBRATION_SIZE =
     sizeof(CALIBRATION_TABLE) / sizeof(CALIBRATION_TABLE[0]);
 
-constexpr float CALIBRATION_MAX_VOLUME = CALIBRATION_TABLE[0].volume_ml;
+constexpr float CALIBRATION_MAX_VOLUME = 1000.0f;  // kapasitas tangki (ml)
+
+// --- DUA PERSAMAAN KALIBRASI (regresi 11 titik, 07 Okt 2026) ---
+// Dipakai BERSAMAAN biar bisa dibandingkan langsung.
+//
+//   [A] regresi linear LS : V = 81.498 * (16.481 - d)
+//       RMSE 26.6 ml, max 54 ml. Paling akurat.
+//       A  = penampang tangki = 81.498 cm^2
+//       d0 = jarak dasar      = 16.481 cm  (V = 0)
+//
+//   [B] jangkar di titik 0 : V = 87.546 * (15.870 - d)
+//       RMSE 36.8 ml, max 82 ml. Dipaksa 0 ml pas di 15.87 cm.
+constexpr float CAL_A_SLOPE = 81.498f;   // cm^2 (penampang)
+constexpr float CAL_A_D0    = 16.481f;   // cm (jarak saat V=0)
+constexpr float CAL_B_SLOPE = 87.546f;
+constexpr float CAL_B_D0    = 15.870f;   // cm (titik 0 ml terukur)
 
 // --- Fungsi helper ---
 namespace Calibration {
@@ -56,6 +71,21 @@ namespace Calibration {
         return echoUs * speed / 20000.0f;               // cm
     }
 
+    // ==== PERSAMAAN A (regresi linear LS) ====
+    // V = CAL_A_SLOPE * (CAL_A_D0 - d), lalu clamp [0, MAX].
+    inline float distanceToVolumeA(float distanceCm) {
+        float v = CAL_A_SLOPE * (CAL_A_D0 - distanceCm);
+        return constrain(v, 0.0f, CALIBRATION_MAX_VOLUME);
+    }
+
+    // ==== PERSAMAAN B (jangkar di titik 0 ml) ====
+    // V = CAL_B_SLOPE * (CAL_B_D0 - d), lalu clamp [0, MAX].
+    inline float distanceToVolumeB(float distanceCm) {
+        float v = CAL_B_SLOPE * (CAL_B_D0 - distanceCm);
+        return constrain(v, 0.0f, CALIBRATION_MAX_VOLUME);
+    }
+
+    // ==== PIECEWISE (tabel 11 titik) - dipertahankan sbg referensi ====
     // Jarak (cm) → volume (ml) via piecewise linear interpolation.
     //
     // Cari 2 titik kalibrasi yang mengapit distanceCm, lalu pakai:

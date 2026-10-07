@@ -20,7 +20,8 @@ void App::setup()
 
     Serial.println();
     Serial.println("==============================");
-    Serial.println("ESP32 BMS MQTT");
+    Serial.println("ESP32 BMS MQTT v1.4");
+    Serial.println("Kalibrasi: 2 persamaan A/B (calibration.h)");
     Serial.println("==============================");
 
     // Siapkan hardware sensor (pin TRIG/ECHO).
@@ -74,10 +75,17 @@ void App::loop()
 
         if (_mqtt.publish(payload.c_str()))
         {
-            // Kalibrasi ulang: tampilkan jarak mentah dulu
             Serial.print("Distance: ");
             Serial.print(reading.distance_cm, 2);
-            Serial.println(" cm");
+            Serial.print(" cm | A: ");
+            Serial.print(reading.volume_ml, 1);
+            Serial.print(" ml (");
+            Serial.print(reading.level_percent, 1);
+            Serial.print(" %) | B: ");
+            Serial.print(reading.volume_b_ml, 1);
+            Serial.print(" ml (");
+            Serial.print(reading.level_b_percent, 1);
+            Serial.println(" %)");
 
             Serial.print("JSON: ");
             Serial.println(payload);
@@ -89,12 +97,20 @@ void App::loop()
     }
 }
 
-// Buat payload JSON — kalibrasi ulang: hanya jarak dulu.
+// Buat payload JSON dari hasil bacaan lengkap (cara awam: susun string manual).
 String App::buildJson(const SensorReading &reading)
 {
     String payload = "{";
     payload += "\"distance_cm\":";
     payload += String(reading.distance_cm, 2);
+    payload += ",\"volume_ml\":";
+    payload += String(reading.volume_ml, 1);
+    payload += ",\"level_percent\":";
+    payload += String(reading.level_percent, 1);
+    payload += ",\"volume_b_ml\":";
+    payload += String(reading.volume_b_ml, 1);
+    payload += ",\"level_b_percent\":";
+    payload += String(reading.level_b_percent, 1);
     payload += "}";
     return payload;
 }

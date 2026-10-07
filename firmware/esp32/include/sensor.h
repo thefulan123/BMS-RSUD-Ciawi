@@ -12,8 +12,10 @@
 struct SensorReading
 {
     float distance_cm;     // Jarak sensor → permukaan air
-    float volume_ml;       // Volume air hasil interpolasi kalibrasi
-    float level_percent;   // Persen isi tangki (0-100)
+    float volume_ml;       // PERSAMAAN A (regresi linear LS)
+    float level_percent;   // Level % dari persamaan A
+    float volume_b_ml;     // PERSAMAAN B (jangkar titik 0 ml)
+    float level_b_percent; // Level % dari persamaan B
     bool valid;            // false bila timeout/sensor gagal
 };
 

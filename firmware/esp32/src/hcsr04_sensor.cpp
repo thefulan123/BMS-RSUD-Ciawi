@@ -33,7 +33,7 @@ unsigned long HcSr04Sensor::readEchoUs()
 // Pipeline: HC-SR04 → raw echo → temperature compensation → calibration → reading
 SensorReading HcSr04Sensor::read()
 {
-    SensorReading r = {0.0f, 0.0f, 0.0f, false};
+    SensorReading r = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
 
     unsigned long echoUs = readEchoUs();
 
@@ -45,12 +45,15 @@ SensorReading HcSr04Sensor::read()
     // 1. Echo time → jarak, dengan kompensasi suhu (v = 331.3 + 0.606*T)
     r.distance_cm = Calibration::echoUsToDistance(echoUs, TEMPERATURE_C);
 
-    // 2 & 3: volume & level DIHAPUS SEMENTARA (kalibrasi ulang).
-    // Nanti diisi lagi setelah tabel kalibrasi baru final:
-    //   r.volume_ml     = Calibration::distanceToVolume(r.distance_cm);
-    //   r.level_percent = Calibration::volumeToPercent(r.volume_ml);
-    r.volume_ml = 0.0f;
-    r.level_percent = 0.0f;
+    // 2. Jarak -> volume, DUA PERSAMAAN sekaligus (buat dibandingin):
+    //    [A] V = 81.498 * (16.481 - d)  - regresi linear LS
+    //    [B] V = 87.546 * (15.870 - d)  - jangkar di titik 0 ml
+    r.volume_ml     = Calibration::distanceToVolumeA(r.distance_cm);
+    r.volume_b_ml   = Calibration::distanceToVolumeB(r.distance_cm);
+
+    // 3. Volume -> level persen (masing2 versi)
+    r.level_percent   = Calibration::volumeToPercent(r.volume_ml);
+    r.level_b_percent = Calibration::volumeToPercent(r.volume_b_ml);
 
     r.valid = true;
     return r;
