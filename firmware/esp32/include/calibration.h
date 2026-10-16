@@ -62,6 +62,16 @@ constexpr float CAL_A_D0    = 16.481f;   // cm (jarak saat V=0)
 constexpr float CAL_B_SLOPE = 87.546f;
 constexpr float CAL_B_D0    = 15.870f;   // cm (titik 0 ml terukur)
 
+//   [D] jangkar 2 ujung + kuadratik (NILAI BAIK A, PAS DI 2 UJUNG)
+//       RMSE 27.2 ml, max 56 ml.
+//       V = k*(d0 - d) + c*(d - d0)*(d - d1)
+//       Nol TEPAT di 15.87 cm, 1000 TEPAT di 3.85 cm.
+//       Kubik kuadratik (c<0) nutup lengkungan tangki yang melebar di dasar.
+constexpr float CAL_D_K     = 83.195f;    // 1000 / (15.87 - 3.85)
+constexpr float CAL_D_DEMPY = 15.870f;    // cm (V = 0)
+constexpr float CAL_D_DFULL = 3.850f;     // cm (V = 1000)
+constexpr float CAL_D_C     = -1.6836f;   // koef lengkung
+
 // --- Fungsi helper ---
 namespace Calibration {
 
@@ -82,6 +92,14 @@ namespace Calibration {
     // V = CAL_B_SLOPE * (CAL_B_D0 - d), lalu clamp [0, MAX].
     inline float distanceToVolumeB(float distanceCm) {
         float v = CAL_B_SLOPE * (CAL_B_D0 - distanceCm);
+        return constrain(v, 0.0f, CALIBRATION_MAX_VOLUME);
+    }
+
+    // ==== PERSAMAAN D (jangkar 2 ujung + kuadratik) ====
+    // V = k*(d0 - d) + c*(d - d0)*(d - d1), lalu clamp [0, MAX].
+    inline float distanceToVolumeD(float distanceCm) {
+        float v = CAL_D_K * (CAL_D_DEMPY - distanceCm)
+                + CAL_D_C * (distanceCm - CAL_D_DEMPY) * (distanceCm - CAL_D_DFULL);
         return constrain(v, 0.0f, CALIBRATION_MAX_VOLUME);
     }
 

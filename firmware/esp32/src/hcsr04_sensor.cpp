@@ -33,7 +33,7 @@ unsigned long HcSr04Sensor::readEchoUs()
 // Pipeline: HC-SR04 → raw echo → temperature compensation → calibration → reading
 SensorReading HcSr04Sensor::read()
 {
-    SensorReading r = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
+    SensorReading r = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
 
     unsigned long echoUs = readEchoUs();
 
@@ -50,10 +50,12 @@ SensorReading HcSr04Sensor::read()
     //    [B] V = 87.546 * (15.870 - d)  - jangkar di titik 0 ml
     r.volume_ml     = Calibration::distanceToVolumeA(r.distance_cm);
     r.volume_b_ml   = Calibration::distanceToVolumeB(r.distance_cm);
+    r.volume_d_ml   = Calibration::distanceToVolumeD(r.distance_cm);
 
     // 3. Volume -> level persen (masing2 versi)
     r.level_percent   = Calibration::volumeToPercent(r.volume_ml);
     r.level_b_percent = Calibration::volumeToPercent(r.volume_b_ml);
+    r.level_d_percent = Calibration::volumeToPercent(r.volume_d_ml);
 
     r.valid = true;
     return r;

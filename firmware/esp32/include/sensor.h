@@ -16,6 +16,8 @@ struct SensorReading
     float level_percent;   // Level % dari persamaan A
     float volume_b_ml;     // PERSAMAAN B (jangkar titik 0 ml)
     float level_b_percent; // Level % dari persamaan B
+    float volume_d_ml;     // PERSAMAAN D (jangkar 2 ujung + kuadratik)
+    float level_d_percent; // Level % dari persamaan D
     bool valid;            // false bila timeout/sensor gagal
 };
 

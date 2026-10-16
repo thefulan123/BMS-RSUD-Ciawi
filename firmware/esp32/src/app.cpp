@@ -21,7 +21,7 @@ void App::setup()
     Serial.println();
     Serial.println("==============================");
     Serial.println("ESP32 BMS MQTT v1.4");
-    Serial.println("Kalibrasi: 2 persamaan A/B (calibration.h)");
+    Serial.println("Kalibrasi: 3 persamaan A/B/D (calibration.h)");
     Serial.println("==============================");
 
     // Siapkan hardware sensor (pin TRIG/ECHO).
@@ -85,6 +85,10 @@ void App::loop()
             Serial.print(reading.volume_b_ml, 1);
             Serial.print(" ml (");
             Serial.print(reading.level_b_percent, 1);
+            Serial.print(" %) | D: ");
+            Serial.print(reading.volume_d_ml, 1);
+            Serial.print(" ml (");
+            Serial.print(reading.level_d_percent, 1);
             Serial.println(" %)");
 
             Serial.print("JSON: ");
@@ -111,6 +115,10 @@ String App::buildJson(const SensorReading &reading)
     payload += String(reading.volume_b_ml, 1);
     payload += ",\"level_b_percent\":";
     payload += String(reading.level_b_percent, 1);
+    payload += ",\"volume_d_ml\":";
+    payload += String(reading.volume_d_ml, 1);
+    payload += ",\"level_d_percent\":";
+    payload += String(reading.level_d_percent, 1);
     payload += "}";
     return payload;
 }
